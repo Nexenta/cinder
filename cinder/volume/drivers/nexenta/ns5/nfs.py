@@ -598,12 +598,12 @@ class NexentaNfsDriver(nfs.NfsDriver):
             'reserved_percentage': self.configuration.reserved_percentage,
             'QoS_support': False,
             'location_info': location_info,
-            'volume_backend_name': self.backend_name,
             'compression': self.dataset_compression,
         }
         self._stats = {
             'vendor_name': 'Nexenta',
             'description': self.dataset_description,
+            'volume_backend_name': self.backend_name,
             'nef_url': self.nef_host,
             'nef_port': self.nef_port,
             'driver_version': self.VERSION,
