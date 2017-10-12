@@ -176,15 +176,13 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         except exception.NexentaException as exc:
             if 'Failed to destroy snap' in exc.kwargs['message']['message']:
                 url = 'storage/snapshots?parent=%s' % path
-                snap_list = []
                 snap_map = {}
                 for snap in self.nef.get(url)['data']:
-                    snap_list.append(snap['path'])
-                for snap in snap_list:
-                    url = 'storage/snapshots/%s' % snap.replace('/', '%2F')
+                    url = 'storage/snapshots/%s' % (
+                        snap['path'].replace('/', '%2F'))
                     data = self.nef.get(url)
                     if data['clones']:
-                        snap_map[data['creationTxg']] = snap
+                        snap_map[data['creationTxg']] = snap['path']
                 snap = snap_map[max(snap_map)]
                 url = 'storage/snapshots/%s' % snap.replace('/', '%2F')
                 clone = self.nef.get(url)['clones'][0]

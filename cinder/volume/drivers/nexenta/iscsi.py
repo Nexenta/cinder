@@ -224,7 +224,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 six.text_type(self.configuration.nexenta_blocksize),
                 self.configuration.nexenta_sparse)
         except exception.NexentaException as exc:
-            if 'does not exist' in exc.args[0]:
+            if 'already exists' in exc.args[0]:
                 return
             raise
 
