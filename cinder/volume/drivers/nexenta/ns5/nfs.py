@@ -330,48 +330,6 @@ class NexentaNfsDriver(nfs.NfsDriver):
             'mount_point_base': self.nfs_mount_point_base
         }
 
-    def retype(self, context, volume, new_type, diff, host):
-        """Convert the volume to be of the new type.
-
-        :param ctxt: Context
-        :param volume: A dictionary describing the volume to migrate
-        :param new_type: A dictionary describing the volume type to convert to
-        :param diff: A dictionary with the difference between the two types
-        :param host: A dictionary describing the host to migrate to, where
-                     host['host'] is its name, and host['capabilities'] is a
-                     dictionary of its reported capabilities.
-        """
-        LOG.debug('Retype volume request %(vol)s to be %(type)s '
-                  '(host: %(host)s), diff %(diff)s.',
-                  {'vol': volume['name'],
-                   'type': new_type,
-                   'host': host,
-                   'diff': diff})
-
-        retyped = False
-        migrated = False
-        model_update = None
-
-        src_driver = self.__class__.__name__
-        dst_driver = host['capabilities']['location_info'].split(':')[0]
-        if src_driver != dst_driver:
-            LOG.warning('Cannot retype from %(src_driver)s to '
-                        '%(dst_driver)s.',
-                        {
-                            'src_driver': src_driver,
-                            'dst_driver': dst_driver
-                        })
-            return False
-
-        old, new = (volume['host'], host['host'])
-        if old != new:
-            migrated, provider_location = self.migrate_volume(
-                context, volume, host)
-
-        if not migrated:
-            model_update = {'provider_location': volume['provider_location']}
-        return retyped or migrated, model_update
-
     def delete_volume(self, volume):
         """Deletes a logical volume.
 
