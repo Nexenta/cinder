@@ -245,29 +245,6 @@ class NexentaEdgeISCSIDriver(driver.ISCSIDriver):
         return 'cinder-clone-snapshot-%(id)s' % volume
 
     def create_cloned_volume(self, volume, src_vref):
-        """
-        vol_url = (self.bucket_url + '/objects/' +
-                   src_vref['name'] + '/clone')
-        clone_body = {
-            'tenant_name': self.tenant,
-            'bucket_name': self.bucket,
-            'object_name': volume['name']
-        }
-        try:
-            self.restapi.post(vol_url, clone_body)
-            self.restapi.post('service/' + self.iscsi_service + '/iscsi', {
-                'objectPath': self.bucket_path + '/' + volume['name'],
-                'volSizeMB': int(src_vref['size']) * units.Ki,
-                'blockSize': self.blocksize,
-                'chunkSize': self.chunksize
-            })
-        except exception.VolumeBackendAPIException:
-            with excutils.save_and_reraise_exception():
-                LOG.exception(_LE('Error creating cloned volume'))
-        if volume['size'] > src_vref['size']:
-            self.extend_volume(volume, volume['size'])
-        """
-
         snapshot = {'volume_name': src_vref['name'],
                     'volume_id': src_vref['id'],
                     'volume_size': src_vref['size'],

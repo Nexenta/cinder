@@ -217,11 +217,16 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         :param volume: volume reference
         :return: model update dict for volume reference
         """
-        self.nms.zvol.create(
-            self._get_zvol_name(volume['name']),
-            '%sG' % (volume['size'],),
-            six.text_type(self.configuration.nexenta_blocksize),
-            self.configuration.nexenta_sparse)
+        try:
+            self.nms.zvol.create(
+                self._get_zvol_name(volume['name']),
+                '%sG' % (volume['size'],),
+                six.text_type(self.configuration.nexenta_blocksize),
+                self.configuration.nexenta_sparse)
+        except exception.NexentaException as exc:
+            if 'does not exist' in exc.args[0]:
+                return
+            raise
 
     def extend_volume(self, volume, new_size):
         """Extend an existing volume.
@@ -339,7 +344,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         ssh_bound = False
         ssh_bindings = self.nms.appliance.ssh_list_bindings()
         for bind in ssh_bindings:
-            if dst_host.startswith(ssh_bindings[bind][3]):
+            if dst_host.startswith(bind.split('@')[1].split(':')[0]):
                 ssh_bound = True
                 break
         if not ssh_bound:

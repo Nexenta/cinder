@@ -146,7 +146,7 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
 
         if volume['status'] not in ('available', 'retyping'):
             LOG.warning("Volume status must be 'available' or 'retyping'."
-                            " Current volume status: %s", volume['status'])
+                        " Current volume status: %s", volume['status'])
             return false_ret
 
         if 'capabilities' not in host:
@@ -168,7 +168,7 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
         shares = []
         for bind in ssh_bindings:
             for share in ns_shares:
-                if (share.startswith(ssh_bindings[bind][3]) and
+                if (share.startswith(bind.split('@')[1].split(':')[0]) and
                         ns_shares[share] >= volume['size']):
                     shares.append(share)
         if len(shares) == 0:
@@ -279,7 +279,7 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
                         {
                             'src_backend': src_backend,
                             'dst_backend': dst_backend
-            })
+                        })
             return False
 
         hosts = (volume['host'], host['host'])
@@ -709,14 +709,14 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
                 if attempt == (num_attempts - 1):
                     LOG.error('Mount failure for %(share)s after '
                               '%(count)d attempts.', {
-                              'share': nfs_share,
-                              'count': num_attempts})
+                                  'share': nfs_share,
+                                  'count': num_attempts})
                     raise exception.NfsException(six.text_type(e))
                 LOG.warning(
                     'Mount attempt %(attempt)d failed: %(error)s. '
                     'Retrying mount ...', {
-                    'attempt': attempt,
-                    'error': e})
+                        'attempt': attempt,
+                        'error': e})
                 greenthread.sleep(1)
 
     def _mount_subfolders(self):

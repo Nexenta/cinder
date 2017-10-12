@@ -76,6 +76,7 @@ class RESTCaller(object):
         data = None
         if len(args) > 1:
             kwargs['json'] = args[1]
+            data = args[1]
 
         LOG.debug('Issuing call to NS: %s %s, data: %s',
                   url, self.__method, data)
