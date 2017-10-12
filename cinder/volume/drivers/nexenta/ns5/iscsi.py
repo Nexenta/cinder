@@ -30,7 +30,6 @@ import uuid
 
 VERSION = '1.2.0'
 LOG = logging.getLogger(__name__)
-TARGET_GROUP_PREFIX = 'cinder-tg-'
 
 
 @interface.volumedriver
@@ -67,6 +66,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             self.configuration.append_config_values(
                 options.NEXENTA_RRMGR_OPTS)
         self.verify_ssl = self.configuration.driver_ssl_cert_verify
+        self.target_prefix = self.configuration.nexenta_target_prefix
         self.use_https = self.configuration.nexenta_use_https
         self.nef_host = self.configuration.nexenta_rest_address
         self.iscsi_host = self.configuration.nexenta_host
@@ -114,10 +114,10 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         self._fetch_volumes()
 
     def _fetch_volumes(self):
-        url = 'san/iscsi/targets?fields=alias,name&limit=50000'
+        url = 'san/iscsi/targets?fields=name'
         for target in self.nef.get(url)['data']:
-            tg_name = target['alias']
-            if tg_name.startswith(TARGET_GROUP_PREFIX):
+            if target['name'].startswith(self.target_prefix):
+                tg_name = target['name'].split(':')[-1]
                 self.targets[tg_name] = target['name']
                 self._fill_volumes(tg_name)
 
@@ -397,6 +397,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         :param volume: reference of volume to be exported
         """
         volume_path = self._get_volume_path(volume)
+        lpt = self.configuration.nexenta_luns_per_target
 
         # Find out whether the volume is exported
         vol_map_url = 'san/lunMappings?volume={}&fields=lun'.format(
@@ -408,30 +409,25 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             # Choose the best target group among existing ones
             tg_name = None
             for tg in self.volumes.keys():
-                if len(self.volumes[tg]) < 20:
+                if len(self.volumes[tg]) < lpt:
                     tg_name = tg
                     break
             if tg_name:
                 target_name = self.targets[tg_name]
             else:
-                tg_name = TARGET_GROUP_PREFIX + uuid.uuid4().hex
-
                 # Create new target
+                target_name = self.target_prefix + uuid.uuid4().hex
                 url = 'san/iscsi/targets'
                 portal = self.iscsi_host
                 data = {
                     "portals": [
                         {"address": portal}
                     ],
-                    'alias': tg_name
+                    'name': target_name
                 }
                 self.nef.post(url, data)
-
-                # Get the name of just created target
-                data = self.nef.get(url + '?fields=name&alias={}'.format(
-                    tg_name))['data']
-                target_name = data[0]['name']
-
+                # Create new TG with corresponding name
+                tg_name = target_name.split(':')[-1]
                 self._create_target_group(tg_name, target_name)
 
                 self.targets[tg_name] = target_name
@@ -458,7 +454,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             # Get LUN of just created volume
             data = self.nef.get(vol_map_url).get('data')
             counter = 0
-            while not data and counter < 20:
+            while not data and counter < lpt:
                 greenthread.sleep(1)
                 counter += 1
                 data = self.nef.get(vol_map_url).get('data')

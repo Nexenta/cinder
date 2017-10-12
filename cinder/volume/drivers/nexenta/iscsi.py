@@ -344,7 +344,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         ssh_bound = False
         ssh_bindings = self.nms.appliance.ssh_list_bindings()
         for bind in ssh_bindings:
-            if dst_host.startswith(ssh_bindings[bind][3]):
+            if dst_host.startswith(bind.split('@')[1].split(':')[0]):
                 ssh_bound = True
                 break
         if not ssh_bound:
