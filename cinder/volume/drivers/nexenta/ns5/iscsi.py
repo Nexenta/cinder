@@ -35,12 +35,12 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
     """Executes volume driver commands on Nexenta Appliance.
 
     Version history:
-        1.2.1 - Configurable luns per parget, target prefix.
-        1.2.0 - Failover support.
+        1.0.0 - Initial driver version.
         1.1.0 - Added HTTPS support.
                 Added use of sessions for REST calls.
                 Added abandoned volumes and snapshots cleanup.
-        1.0.0 - Initial driver version.
+        1.2.0 - Failover support.
+        1.2.1 - Configurable luns per parget, target prefix.
     """
 
     VERSION = VERSION

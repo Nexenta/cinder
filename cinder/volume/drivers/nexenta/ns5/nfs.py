@@ -38,13 +38,13 @@ class NexentaNfsDriver(nfs.NfsDriver):
     """Executes volume driver commands on Nexenta Appliance.
 
     Version history:
-        1.4.0 - Migrate volume support and new NEF API calls.
-        1.3.0 - Failover support.
+        1.0.0 - Initial driver version.
+        1.1.0 - Support for extend volume.
         1.2.0 - Added HTTPS support.
                 Added use of sessions for REST calls.
                 Added abandoned volumes and snapshots cleanup.
-        1.1.0 - Support for extend volume.
-        1.0.0 - Initial driver version.
+        1.3.0 - Failover support.
+        1.4.0 - Migrate volume support and new NEF API calls.
     """
 
     driver_prefix = 'nexenta'
