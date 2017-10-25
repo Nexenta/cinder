@@ -361,6 +361,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             'description': self.dataset_description,
             'driver_version': self.VERSION,
             'storage_protocol': 'iSCSI',
+            'sparsed_volumes': self.configuration.nexenta_sparse,
             'total_capacity_gb': total_amount,
             'free_capacity_gb': free_amount,
             'reserved_percentage': self.configuration.reserved_percentage,

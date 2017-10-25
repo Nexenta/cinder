@@ -558,9 +558,9 @@ class NexentaNfsDriver(nfs.NfsDriver):
         pool, fs = self._get_share_datasets(path)
         url = 'storage/filesystems/%s' % '%2F'.join([pool, fs])
         data = self.nef.get(url)
-        total = utils.str2size(data['bytesAvailable'])
+        free = utils.str2size(data['bytesAvailable'])
         allocated = utils.str2size(data['bytesUsed'])
-        free = total - allocated
+        total = free + allocated
         return total, free, allocated
 
     def _get_snapshot_volume(self, snapshot):
@@ -600,6 +600,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
             'nef_port': self.nef_port,
             'driver_version': self.VERSION,
             'storage_protocol': 'NFS',
+            'sparsed_volumes': self.sparsed_volumes,
             'total_capacity_gb': total_space,
             'free_capacity_gb': free_space,
             'reserved_percentage': self.configuration.reserved_percentage,
