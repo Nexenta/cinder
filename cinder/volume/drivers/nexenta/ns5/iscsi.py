@@ -28,7 +28,7 @@ from cinder.volume.drivers.nexenta import options
 from cinder.volume.drivers.nexenta import utils
 import uuid
 
-VERSION = '1.2.0'
+VERSION = '1.2.1'
 LOG = logging.getLogger(__name__)
 
 
@@ -37,11 +37,12 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
     """Executes volume driver commands on Nexenta Appliance.
 
     Version history:
-        1.2.0 - Failover support.
+        1.0.0 - Initial driver version.
         1.1.0 - Added HTTPS support.
                 Added use of sessions for REST calls.
                 Added abandoned volumes and snapshots cleanup.
-        1.0.0 - Initial driver version.
+        1.2.0 - Failover support.
+        1.2.1 - Configurable luns per parget, target prefix.
     """
 
     VERSION = VERSION
@@ -362,6 +363,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             'description': self.dataset_description,
             'driver_version': self.VERSION,
             'storage_protocol': 'iSCSI',
+            'sparsed_volumes': self.configuration.nexenta_sparse,
             'total_capacity_gb': total_amount,
             'free_capacity_gb': free_amount,
             'reserved_percentage': self.configuration.reserved_percentage,

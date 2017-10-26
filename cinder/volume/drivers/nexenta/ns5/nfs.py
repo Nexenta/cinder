@@ -40,13 +40,13 @@ class NexentaNfsDriver(nfs.NfsDriver):
     """Executes volume driver commands on Nexenta Appliance.
 
     Version history:
-        1.4.0 - Migrate volume support and new NEF API calls.
-        1.3.0 - Failover support.
+        1.0.0 - Initial driver version.
+        1.1.0 - Support for extend volume.
         1.2.0 - Added HTTPS support.
                 Added use of sessions for REST calls.
                 Added abandoned volumes and snapshots cleanup.
-        1.1.0 - Support for extend volume.
-        1.0.0 - Initial driver version.
+        1.3.0 - Failover support.
+        1.4.0 - Migrate volume support and new NEF API calls.
     """
 
     driver_prefix = 'nexenta'
@@ -188,6 +188,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
 
     def _ensure_share_unmounted(self, nfs_share, mount_path=None):
         """Ensure that NFS share is unmounted on the host.
+
         :param nfs_share: NFS share name
         :param mount_path: mount path on the host
         """
@@ -559,9 +560,9 @@ class NexentaNfsDriver(nfs.NfsDriver):
         pool, fs = self._get_share_datasets(path)
         url = 'storage/filesystems/%s' % '%2F'.join([pool, fs])
         data = self.nef.get(url)
-        total = utils.str2size(data['bytesAvailable'])
+        free = utils.str2size(data['bytesAvailable'])
         allocated = utils.str2size(data['bytesUsed'])
-        free = total - allocated
+        total = free + allocated
         return total, free, allocated
 
     def _get_snapshot_volume(self, snapshot):
@@ -601,6 +602,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
             'nef_port': self.nef_port,
             'driver_version': self.VERSION,
             'storage_protocol': 'NFS',
+            'sparsed_volumes': self.sparsed_volumes,
             'total_capacity_gb': total_space,
             'free_capacity_gb': free_space,
             'reserved_percentage': self.configuration.reserved_percentage,

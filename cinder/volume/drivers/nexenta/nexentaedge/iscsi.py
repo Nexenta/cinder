@@ -101,8 +101,8 @@ class NexentaEdgeISCSIDriver(driver.ISCSIDriver):
                 protocol, self.restapi_host, self.restapi_port, '/',
                 self.restapi_user, self.restapi_password, auto=auto)
 
-            rsp = self.restapi.get('service/'
-                                   + self.iscsi_service + '/iscsi/status')
+            rsp = self.restapi.get(
+                'service/' + self.iscsi_service + '/iscsi/status')
             data_keys = rsp['data'][list(rsp['data'].keys())[0]]
             self.target_name = data_keys.split('\n', 1)[0].split(' ')[2]
 
@@ -140,8 +140,9 @@ class NexentaEdgeISCSIDriver(driver.ISCSIDriver):
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
                 LOG.exception('Error verifying iSCSI service %(serv)s on '
-                              'host %(hst)s', {'serv': self.iscsi_service,
-                              'hst': self.restapi_host})
+                              'host %(hst)s', {
+                                  'serv': self.iscsi_service,
+                                  'hst': self.restapi_host})
 
     def check_for_setup_error(self):
         try:
@@ -256,14 +257,14 @@ class NexentaEdgeISCSIDriver(driver.ISCSIDriver):
             self.create_volume_from_snapshot(volume, snapshot)
         except exception.NexentaException:
             LOG.error('Volume creation failed, deleting created snapshot '
-                      '%s', '@'.join(
-                [snapshot['volume_name'], snapshot['name']]))
+                      '%s', '@'.join([snapshot['volume_name'],
+                                     snapshot['name']]))
             try:
                 self.delete_snapshot(snapshot)
             except (exception.NexentaException, exception.SnapshotIsBusy):
                 LOG.warning('Failed to delete zfs snapshot '
-                            '%s', '@'.join(
-                    [snapshot['volume_name'], snapshot['name']]))
+                            '%s', '@'.join([snapshot['volume_name'],
+                                            snapshot['name']]))
             raise
         if volume['size'] > src_vref['size']:
             self.extend_volume(volume, volume['size'])
