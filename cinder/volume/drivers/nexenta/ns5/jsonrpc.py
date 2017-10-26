@@ -198,7 +198,7 @@ class HTTPSAuth(requests.auth.AuthBase):
         return r
 
     def https_auth(self):
-        LOG.debug('Sending auth request to %s.' % self.url)
+        LOG.debug('Sending auth request to %s.', self.url)
         url = '/'.join((self.url, 'auth/login'))
         headers = {'Content-Type': 'application/json'}
         data = {'username': self.username, 'password': self.password}

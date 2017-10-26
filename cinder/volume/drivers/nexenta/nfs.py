@@ -32,7 +32,7 @@ from cinder.volume.drivers.nexenta import options
 from cinder.volume.drivers.nexenta import utils
 from cinder.volume.drivers import nfs
 
-VERSION = '1.3.1'
+VERSION = '1.3.2'
 LOG = logging.getLogger(__name__)
 
 
@@ -54,6 +54,8 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
         1.2.0 - Added migrate and retype methods.
         1.3.0 - Extend volume method.
         1.3.1 - Cache capacity info and check shared folders on setup.
+        1.3.2 - Pass mount_point_base in init_conn to support host-based
+                migration.
     """
 
     driver_prefix = 'nexenta'
@@ -168,7 +170,7 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
         shares = []
         for bind in ssh_bindings:
             for share in ns_shares:
-                if (share.startswith(ssh_bindings[bind][3]) and
+                if (share.startswith(bind.split('@')[1].split(':')[0]) and
                         ns_shares[share] >= volume['size']):
                     shares.append(share)
         if len(shares) == 0:
@@ -240,7 +242,8 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
             data['options'] = self.shares[volume['provider_location']]
         return {
             'driver_volume_type': self.driver_volume_type,
-            'data': data
+            'data': data,
+            'mount_point_base': self.nfs_mount_point_base
         }
 
     def retype(self, context, volume, new_type, diff, host):
@@ -280,7 +283,7 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
                             'src_backend': src_backend,
                             'dst_backend': dst_backend
                         })
-            return False, model_update
+            return False
 
         hosts = (volume['host'], host['host'])
         old, new = hosts
@@ -709,14 +712,14 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
                 if attempt == (num_attempts - 1):
                     LOG.error('Mount failure for %(share)s after '
                               '%(count)d attempts.', {
-                              'share': nfs_share,
-                              'count': num_attempts})
+                                  'share': nfs_share,
+                                  'count': num_attempts})
                     raise exception.NfsException(six.text_type(e))
                 LOG.warning(
                     'Mount attempt %(attempt)d failed: %(error)s. '
                     'Retrying mount ...', {
-                    'attempt': attempt,
-                    'error': e})
+                        'attempt': attempt,
+                        'error': e})
                 greenthread.sleep(1)
 
     def _mount_subfolders(self):

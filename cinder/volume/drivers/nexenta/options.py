@@ -72,6 +72,9 @@ NEXENTA_CONNECTION_OPTS = [
 ]
 
 NEXENTA_ISCSI_OPTS = [
+    cfg.StrOpt('nexenta_iscsi_target_portal_groups',
+               default='',
+               help='Nexenta target portal groups'),
     cfg.IntOpt('nexenta_iscsi_target_portal_port',
                default=3260,
                help='Nexenta target portal port'),
@@ -122,6 +125,9 @@ NEXENTA_DATASET_OPTS = [
                default='off',
                choices=['on', 'off', 'sha256', 'verify', 'sha256, verify'],
                help='Deduplication value for new ZFS folders.'),
+    cfg.StrOpt('nexenta_folder',
+               default='',
+               help='A folder where cinder created datasets will reside.'),
     cfg.StrOpt('nexenta_dataset_description',
                default='',
                help='Human-readable description for the folder.'),
