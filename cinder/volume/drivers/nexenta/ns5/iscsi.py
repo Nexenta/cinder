@@ -26,7 +26,6 @@ from cinder.volume import driver
 from cinder.volume.drivers.nexenta.ns5 import jsonrpc
 from cinder.volume.drivers.nexenta import options
 from cinder.volume.drivers.nexenta import utils
-import uuid
 
 VERSION = '1.2.1'
 LOG = logging.getLogger(__name__)
@@ -390,6 +389,19 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         self.volumes[tg_name] = {
             mapping['volume'] for mapping in self.nef.get(url)['data']}
 
+    def _get_target_group_name(self, target_name):
+        """Return Nexenta iSCSI target group name for volume."""
+        return target_name.replace(
+            self.configuration.nexenta_target_prefix,
+            self.configuration.nexenta_target_group_prefix
+        )
+
+    def _get_target_index(self):
+        targets = self.nef.get('san/iscsi/targets')['data']
+        if not targets:
+            return 0
+        return min([target['name'].split('-')[-1] for target in targets])
+
     def _do_export(self, _ctx, volume):
         """Do all steps to get zfs volume exported at separate target.
 
@@ -415,7 +427,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 target_name = self.targets[tg_name]
             else:
                 # Create new target
-                target_name = self.target_prefix + uuid.uuid4().hex
+                target_name = self.target_prefix + self._get_target_index()
                 url = 'san/iscsi/targets'
                 portal = self.iscsi_host
                 data = {
@@ -426,7 +438,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 }
                 self.nef.post(url, data)
                 # Create new TG with corresponding name
-                tg_name = target_name.split(':')[-1]
+                tg_name = (
+                    self._get_target_group_name(target_name).replace('/', '-'))
                 self._create_target_group(tg_name, target_name)
 
                 self.targets[tg_name] = target_name
