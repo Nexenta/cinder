@@ -17,6 +17,8 @@ from eventlet import greenthread
 from oslo_log import log as logging
 from oslo_utils import units
 
+# from six.moves import urllib
+
 from cinder import context
 from cinder import db
 from cinder import exception
@@ -53,9 +55,9 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         super(NexentaISCSIDriver, self).__init__(*args, **kwargs)
         self.nef = None
         # mapping of targets and groups. Groups are the keys
-        self.targets = {}
+        # self.targets = {}
         # list of volumes mapped to target group. Groups are the keys
-        self.volumes = {}
+        # self.volumes = {}
         if self.configuration:
             self.configuration.append_config_values(
                 options.NEXENTA_CONNECTION_OPTS)
@@ -111,15 +113,15 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             else:
                 raise
 
-        self._fetch_volumes()
+        # self._fetch_volumes()
 
-    def _fetch_volumes(self):
-        url = 'san/iscsi/targets?fields=name'
-        for target in self.nef.get(url)['data']:
-            if target['name'].startswith(self.target_prefix):
-                tg_name = target['name'].split(':')[-1]
-                self.targets[tg_name] = target['name']
-                self._fill_volumes(tg_name)
+    # def _fetch_volumes(self):
+    #     url = 'san/iscsi/targets?fields=name'
+    #     for target in self.nef.get(url)['data']:
+    #         if target['name'].startswith(self.target_prefix):
+    #             tg_name = target['name'].split(':')[-1]
+    #             self.targets[tg_name] = target['name']
+    #             self._fill_volumes(tg_name)
 
     def check_for_setup_error(self):
         """Verify that the zfs pool, vg and iscsi service exists.
@@ -323,10 +325,10 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 else:
                     raise
 
-        for tg in self.volumes:
-            if volume_path in self.volumes[tg]:
-                self.volumes[tg].remove(volume_path)
-                break
+        # for tg in self.volumes:
+        #     if volume_path in self.volumes[tg]:
+        #         self.volumes[tg].remove(volume_path)
+        #         break
 
     def get_volume_stats(self, refresh=False):
         """Get volume stats.
@@ -383,11 +385,11 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         """Return name for snapshot that will be used to clone the volume."""
         return 'cinder-clone-snapshot-%(id)s' % volume
 
-    def _fill_volumes(self, tg_name):
-        url = ('san/lunMappings?targetGroup={}&fields=volume'
-               '&limit=50000').format(tg_name)
-        self.volumes[tg_name] = {
-            mapping['volume'] for mapping in self.nef.get(url)['data']}
+    # def _fill_volumes(self, tg_name):
+    #     url = ('san/lunMappings?targetGroup={}&fields=volume'
+    #            '&limit=50000').format(tg_name)
+    #     self.volumes[tg_name] = {
+    #         mapping['volume'] for mapping in self.nef.get(url)['data']}
 
     def _get_target_group_name(self, target_name):
         """Return Nexenta iSCSI target group name for volume."""
@@ -399,7 +401,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
     def _get_target_index(self):
         targets = self.nef.get('san/iscsi/targets')['data']
         if not targets:
-            return 0
+            return '0'
         return min([target['name'].split('-')[-1] for target in targets])
 
     def _do_export(self, _ctx, volume):
@@ -413,26 +415,36 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         # Find out whether the volume is exported
         vol_map_url = 'san/lunMappings?volume={}&fields=lun'.format(
             volume_path.replace('/', '%2F'))
-        data = self.nef.get(vol_map_url).get('data')
-        if data:
-            model_update = {}
+        mapping_data = self.nef.get(vol_map_url).get('data')
+        if mapping_data:
+            tg = mapping_data['targetGroup']
+            tg_data = self.nef.get('san/targetgroups?name=%s' % tg)
+            target_name = tg_data['members'][0]
+            provider_location = '%(host)s:%(port)s,1 %(name)s %(lun)s' % {
+                'host': self.iscsi_host,
+                'port': self.configuration.nexenta_iscsi_target_portal_port,
+                'name': target_name,
+                'lun': mapping_data['lun'],
+            }
+            model_update = {'provider_location': provider_location}
         else:
             # Choose the best target group among existing ones
             tg_name = None
-            for tg in self.volumes.keys():
-                if len(self.volumes[tg]) < lpt:
-                    tg_name = tg
-                    break
+            target_data = self.nef.get('san/iscsi/targets')['data']
+            targets = [target['name'] for target in target_data]
+            # for tg in self.volumes.keys():
+            #     if len(self.volumes[tg]) < lpt:
+            #         tg_name = tg
+            #         break
             if tg_name:
                 target_name = self.targets[tg_name]
             else:
                 # Create new target
                 target_name = self.target_prefix + self._get_target_index()
                 url = 'san/iscsi/targets'
-                portal = self.iscsi_host
                 data = {
                     "portals": [
-                        {"address": portal}
+                        {"address": self.iscsi_host}
                     ],
                     'name': target_name
                 }
@@ -443,7 +455,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 self._create_target_group(tg_name, target_name)
 
                 self.targets[tg_name] = target_name
-                self.volumes[tg_name] = set()
+                # self.volumes[tg_name] = set()
 
             # Export the volume
             url = 'san/lunMappings'
@@ -454,7 +466,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             }
             try:
                 self.nef.post(url, data)
-                self.volumes[tg_name].add(volume_path)
+                # self.volumes[tg_name].add(volume_path)
             except exception.NexentaException as e:
                 if 'No such target group' in e.args[0]:
                     self._create_target_group(tg_name, target_name)

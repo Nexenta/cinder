@@ -517,7 +517,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         pool = self.share.split('/')[0]
         LOG.debug(
             'Creating ACL for filesystem %s on Nexenta Store', filesystem)
-        url = 'storage//filesystems/%s/acl' % (
+        url = 'storage/filesystems/%s/acl' % (
             '%2F'.join([pool, path.replace('/', '%2F'), filesystem]))
         data = {
             "type": "allow",
