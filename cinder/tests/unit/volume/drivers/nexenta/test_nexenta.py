@@ -75,8 +75,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_rest_port = 2000
         self.cfg.nexenta_rest_protocol = 'http'
         self.cfg.nexenta_iscsi_target_portal_port = 3260
-        self.cfg.nexenta_target_prefix = 'iqn:'
-        self.cfg.nexenta_target_group_prefix = 'cinder/'
+        self.cfg.nexenta_target_prefix = 'iqn:cinder'
+        self.cfg.nexenta_target_group_prefix = 'cinder'
         self.cfg.nexenta_blocksize = '8K'
         self.cfg.nexenta_sparse = True
         self.cfg.nexenta_dataset_compression = 'on'
@@ -85,6 +85,9 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_rrmgr_tcp_buf_size = 1024
         self.cfg.nexenta_rrmgr_connections = 2
         self.cfg.reserved_percentage = 20
+        self.cfg.nexenta_folder = ''
+        self.cfg.nexenta_iscsi_target_portal_groups = ''
+        self.cfg.driver_ssl_cert_verify = False
         self.nms_mock = mock.Mock()
         for mod in ['volume', 'zvol', 'iscsitarget', 'appliance',
                     'stmf', 'scsidisk', 'snapshot']:
@@ -120,11 +123,11 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.nms_mock.zvol.get_child_props.assert_called_with(
             'cinder/volume1', 'origin')
         self.nms_mock.zvol.destroy.assert_called_with(
-            'cinder/volume1', '')
+            'cinder/volume1', '-r')
 
         self.nms_mock.zvol.get_child_props.assert_called_with(
             'cinder/volume1', 'origin')
-        self.nms_mock.zvol.destroy.assert_called_with('cinder/volume1', '')
+        self.nms_mock.zvol.destroy.assert_called_with('cinder/volume1', '-r')
         self.drv.delete_volume(self.TEST_VOLUME_REF)
 
         self.nms_mock.zvol.get_child_props.assert_called_with(
@@ -163,8 +166,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         volume_name = 'cinder/%s' % volume['name']
 
         self.nms_mock.appliance.ssh_list_bindings.return_value = (
-            {'0': [True, True, True, '1.1.1.1']})
-        self.nms_mock.zvol.get_child_props.return_value = None
+            {'host1@1.1.1.1': ['1', '1', 'host2', '1']})
+        self.nms_mock.zvol.get_child_props.return_value = {}
 
         self.drv.migrate_volume(None, volume, host)
         self.nms_mock.zvol.create_snapshot.assert_called_with(
@@ -185,7 +188,7 @@ class TestNexentaISCSIDriver(test.TestCase):
             'snapshot': snapshot['name']
         }
         self.nms_mock.snapshot.destroy.assert_called_with(snapshot_name, '')
-        self.nms_mock.zvol.destroy.assert_called_with(volume_name, '')
+        self.nms_mock.zvol.destroy.assert_called_with(volume_name, '-r')
         self.nms_mock.snapshot.destroy.assert_called_with(
             'cinder/%(volume)s@%(snapshot)s' % {
                 'volume': volume['name'],
@@ -223,13 +226,13 @@ class TestNexentaISCSIDriver(test.TestCase):
     def _mock_all_export_methods(self, fail=False):
         self.assertTrue(self.nms_mock.stmf.list_targets.called)
         self.nms_mock.iscsitarget.create_target.assert_called_with(
-            {'target_name': 'iqn:1.1.1.1-0'})
+            {'target_name': 'iqn:cinder-1.1.1.1-0', 'tpgs': ''})
         self.nms_mock.stmf.list_targetgroups()
         zvol_name = 'cinder/volume1'
         self.nms_mock.stmf.create_targetgroup.assert_called_with(
-            'cinder/1.1.1.1-0')
+            'cinder-1.1.1.1-0')
         self.nms_mock.stmf.list_targetgroup_members.assert_called_with(
-            'cinder/1.1.1.1-0')
+            'cinder-1.1.1.1-0')
         self.nms_mock.scsidisk.lu_exists.assert_called_with(zvol_name)
         self.nms_mock.scsidisk.create_lu.assert_called_with(zvol_name, {})
 
@@ -241,9 +244,9 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.nms_mock.stmf.list_targets.return_value = []
         self.nms_mock.stmf.list_targetgroups.return_value = []
         self.nms_mock.stmf.list_targetgroup_members.return_value = []
-        self.nms_mock._get_target_name.return_value = ['iqn:1.1.1.1-0']
+        self.nms_mock._get_target_name.return_value = ['iqn:cinder-1.1.1.1-0']
         self.nms_mock.iscsitarget.create_targetgroup.return_value = ({
-            'target_name': 'cinder/1.1.1.1-0'})
+            'target_name': 'cinder-1.1.1.1-0'})
         self.nms_mock.scsidisk.add_lun_mapping_entry.return_value = {'lun': 0}
 
     def test_create_export(self):
@@ -253,7 +256,7 @@ class TestNexentaISCSIDriver(test.TestCase):
         location = '%(host)s:%(port)s,1 %(name)s %(lun)s' % {
             'host': self.cfg.nexenta_host,
             'port': self.cfg.nexenta_iscsi_target_portal_port,
-            'name': 'iqn:1.1.1.1-0',
+            'name': 'iqn:cinder-1.1.1.1-0',
             'lun': '0'
         }
         self.assertEqual({'provider_location': location}, retval)
@@ -264,11 +267,11 @@ class TestNexentaISCSIDriver(test.TestCase):
         self._mock_all_export_methods()
 
     def test_remove_export(self):
-        self.nms_mock.stmf.list_targets.return_value = ['iqn:1.1.1.1-0']
+        self.nms_mock.stmf.list_targets.return_value = ['iqn:cinder-1.1.1.1-0']
         self.nms_mock.stmf.list_targetgroups.return_value = (
-            ['cinder/1.1.1.1-0'])
+            ['cinder-1.1.1.1-0'])
         self.nms_mock.stmf.list_targetgroup_members.return_value = (
-            ['iqn:1.1.1.1-0'])
+            ['iqn:cinder-1.1.1.1-0'])
         self.drv.remove_export({}, self.TEST_VOLUME_REF)
         self.assertTrue(self.nms_mock.stmf.list_targets.called)
         self.assertTrue(self.nms_mock.stmf.list_targetgroups.called)
@@ -286,22 +289,6 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.assertEqual(5368709120.0, stats['free_capacity_gb'])
         self.assertEqual(20, stats['reserved_percentage'])
         self.assertFalse(stats['QoS_support'])
-
-    def test_collect_garbage__snapshot(self):
-        name = 'cinder/v1@s1'
-        self.drv._mark_as_garbage(name)
-        self.nms_mock.zvol.get_child_props.return_value = None
-        self.drv._collect_garbage(name)
-        self.nms_mock.snapshot.destroy.assert_called_with(name, '')
-        self.assertNotIn(name, self.drv._needless_objects)
-
-    def test_collect_garbage__volume(self):
-        name = 'cinder/v1'
-        self.drv._mark_as_garbage(name)
-        self.nms_mock.zvol.get_child_props.return_value = None
-        self.drv._collect_garbage(name)
-        self.nms_mock.zvol.destroy.assert_called_with(name, '')
-        self.assertNotIn(name, self.drv._needless_objects)
 
     def _create_volume_db_entry(self):
         vol = {
@@ -394,6 +381,7 @@ class TestNexentaNfsDriver(test.TestCase):
         self.cfg.nfs_mount_attempts = 3
         self.cfg.reserved_percentage = 20
         self.cfg.max_over_subscription_ratio = 20.0
+        self.cfg.driver_ssl_cert_verify = False
         self.nms_mock = mock.Mock()
         for mod in ('appliance', 'folder', 'server', 'volume', 'netstorsvc',
                     'snapshot', 'netsvc'):
