@@ -22,7 +22,6 @@ from mock import patch
 from cinder import context
 from cinder import db
 from cinder import test
-from cinder.tests.unit import fake_constants as fake
 from cinder.tests.unit.fake_volume import fake_volume_obj
 from cinder.volume import configuration as conf
 from cinder.volume.drivers.nexenta.ns5 import jsonrpc
@@ -33,14 +32,13 @@ class TestNexentaNfsDriver(test.TestCase):
     TEST_SHARE = 'host1:/pool/share'
     TEST_SHARE2_OPTIONS = '-o intr'
     TEST_FILE_NAME = 'test.txt'
-    TEST_SHARES_CONFIG_FILE = '/etc/cinder/nexenta-shares.conf'
     TEST_SNAPSHOT_NAME = 'snapshot1'
     TEST_VOLUME_NAME = 'volume1'
     TEST_VOLUME_NAME2 = 'volume2'
 
     TEST_VOLUME = fake_volume_obj(None, **{
         'name': TEST_VOLUME_NAME,
-        'id': fake.VOLUME_ID,
+        'id': '1',
         'size': 1,
         'status': 'available',
         'provider_location': TEST_SHARE
@@ -49,7 +47,7 @@ class TestNexentaNfsDriver(test.TestCase):
     TEST_VOLUME2 = fake_volume_obj(None, **{
         'name': TEST_VOLUME_NAME2,
         'size': 2,
-        'id': fake.VOLUME2_ID,
+        'id': '2',
         'status': 'in-use'
     })
 
@@ -57,7 +55,7 @@ class TestNexentaNfsDriver(test.TestCase):
         'name': TEST_SNAPSHOT_NAME,
         'volume_name': TEST_VOLUME_NAME,
         'volume_size': 1,
-        'volume_id': fake.VOLUME_ID
+        'volume_id': '1'
     }
 
     TEST_SHARE_SVC = 'svc:/network/nfs/server:default'
@@ -82,16 +80,19 @@ class TestNexentaNfsDriver(test.TestCase):
         self.cfg.max_over_subscription_ratio = 20.0
         self.cfg.nas_host = '1.1.1.1'
         self.cfg.nas_share_path = 'pool/share'
+        self.cfg.driver_ssl_cert_verify = False
+        self.cfg.nexenta_rest_address = '1.1.1.1'
+        self.cfg.nfs_mount_options = ''
         self.nef_mock = mock.Mock()
-        self.stubs.Set(jsonrpc, 'NexentaJSONProxy',
-                       lambda *_, **__: self.nef_mock)
+        self.mock_object(jsonrpc, 'NexentaJSONProxy',
+                         return_value=self.nef_mock)
         self.drv = nfs.NexentaNfsDriver(configuration=self.cfg)
         self.drv.db = db
         self.drv.do_setup(self.ctxt)
 
     def _create_volume_db_entry(self):
         vol = {
-            'id': fake.VOLUME_ID,
+            'id': '1',
             'size': 1,
             'status': 'available',
             'provider_location': self.TEST_SHARE
@@ -108,6 +109,7 @@ class TestNexentaNfsDriver(test.TestCase):
             'export': self.TEST_VOLUME['provider_location'], 'name': 'volume'}
         self.assertEqual({
             'driver_volume_type': self.drv.driver_volume_type,
+            'mount_point_base': '$state_path/mnt',
             'data': data
         }, self.drv.initialize_connection(self.TEST_VOLUME, None))
 
@@ -125,11 +127,10 @@ class TestNexentaNfsDriver(test.TestCase):
         self.nef_mock.get.return_value = 'on'
         self.drv._do_create_volume(self.TEST_VOLUME)
 
-        url = 'storage/pools/pool/filesystems'
+        url = 'storage/filesystems'
         data = {
-            'name': 'share/volume-' + fake.VOLUME_ID,
+            'path': 'pool/share/volume-1',
             'compressionMode': 'on',
-            'dedupMode': 'off',
         }
         self.nef_mock.post.assert_called_with(url, data)
 
@@ -140,22 +141,19 @@ class TestNexentaNfsDriver(test.TestCase):
         self.nef_mock.get.return_value = {}
         self.drv.delete_volume(self.TEST_VOLUME)
         self.nef_mock.delete.assert_called_with(
-            'storage/pools/pool/filesystems/share%2Fvolume-' +
-            fake.VOLUME_ID + '?snapshots=true')
+            'storage/filesystems/pool%2Fshare%2Fvolume-1?snapshots=true')
 
     def test_create_snapshot(self):
         self._create_volume_db_entry()
         self.drv.create_snapshot(self.TEST_SNAPSHOT)
-        url = ('storage/pools/pool/filesystems/share%2Fvolume-' +
-               fake.VOLUME_ID + '/snapshots')
-        data = {'name': self.TEST_SNAPSHOT['name']}
+        url = 'storage/snapshots'
+        data = {'path': 'pool/share/volume-1@snapshot1'}
         self.nef_mock.post.assert_called_with(url, data)
 
     def test_delete_snapshot(self):
         self._create_volume_db_entry()
         self.drv.delete_snapshot(self.TEST_SNAPSHOT)
-        url = ('storage/pools/pool/filesystems/share%2Fvolume-' +
-               fake.VOLUME_ID + '/snapshots/snapshot1')
+        url = ('storage/snapshots/pool%2Fshare%2Fvolume-1@snapshot1')
         self.drv.delete_snapshot(self.TEST_SNAPSHOT)
         self.nef_mock.delete.assert_called_with(url)
 
@@ -167,10 +165,8 @@ class TestNexentaNfsDriver(test.TestCase):
            'NexentaNfsDriver._share_folder')
     def test_create_volume_from_snapshot(self, share, path, extend):
         self._create_volume_db_entry()
-        url = ('storage/pools/%(pool)s/'
-               'filesystems/%(fs)s/snapshots/%(snap)s/clone') % {
-            'pool': 'pool',
-            'fs': '%2F'.join(['share', 'volume-' + fake.VOLUME_ID]),
+        url = ('storage/snapshots/%(fs)s@%(snap)s/clone') % {
+            'fs': '%2F'.join(['pool', 'share', 'volume-1']),
             'snap': self.TEST_SNAPSHOT['name']
         }
         path = '/'.join(['pool/share', self.TEST_VOLUME2['name']])
@@ -185,7 +181,10 @@ class TestNexentaNfsDriver(test.TestCase):
     @patch('cinder.volume.drivers.nexenta.ns5.nfs.'
            'NexentaNfsDriver.local_path')
     @patch('oslo_concurrency.processutils.execute')
-    def test_extend_volume_sparsed(self, _execute, path):
+    @patch('cinder.volume.drivers.nexenta.ns5.nfs.'
+           'NexentaNfsDriver._ensure_share_mounted')
+    def test_extend_volume_sparsed(self, ensure, _execute, path):
+        ensure.return_value = True
         self._create_volume_db_entry()
         path.return_value = 'path'
 
@@ -200,7 +199,10 @@ class TestNexentaNfsDriver(test.TestCase):
     @patch('cinder.volume.drivers.nexenta.ns5.nfs.'
            'NexentaNfsDriver.local_path')
     @patch('oslo_concurrency.processutils.execute')
-    def test_extend_volume_nonsparsed(self, _execute, path):
+    @patch('cinder.volume.drivers.nexenta.ns5.nfs.'
+           'NexentaNfsDriver._ensure_share_mounted')
+    def test_extend_volume_nonsparsed(self, ensure, _execute, path):
+        ensure.return_value = True
         self._create_volume_db_entry()
         path.return_value = 'path'
         with mock.patch.object(self.drv,
@@ -218,7 +220,7 @@ class TestNexentaNfsDriver(test.TestCase):
 
     def test_get_capacity_info(self):
         self.nef_mock.get.return_value = {
-            'bytesAvailable': 1000,
+            'bytesAvailable': 900,
             'bytesUsed': 100}
         self.assertEqual(
             (1000, 900, 100), self.drv._get_capacity_info('pool/share'))
