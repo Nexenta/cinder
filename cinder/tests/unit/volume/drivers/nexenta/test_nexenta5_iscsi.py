@@ -19,6 +19,7 @@ Unit tests for OpenStack Cinder volume driver
 import mock
 from mock import patch
 from oslo_utils import units
+import uuid
 
 from cinder import context
 from cinder import db
@@ -82,7 +83,10 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_dataset_dedup = 'off'
         self.cfg.reserved_percentage = 20
         self.cfg.nexenta_volume = 'pool'
-        self.cfg.nexenta_volume_group = 'dsg'
+        self.cfg.nexenta_luns_per_target = 20
+        self.cfg.driver_ssl_cert_verify = False
+        self.cfg.nexenta_rest_address = '1.1.1.1'
+        self.cfg.nexenta_volume_group = 'vg'
         self.nef_mock = mock.Mock()
         self.mock_object(jsonrpc, 'NexentaJSONProxy',
                          return_value=self.nef_mock)
@@ -113,44 +117,47 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.assertIsNone(self.drv.do_setup(self.ctxt))
 
     def test_check_for_setup_error(self):
-        self.nef_mock.get.return_value = {
-            'data': [{'name': 'iscsit', 'state': 'offline'}]}
+        def get_side_effect1(*args, **kwargs):
+            if 'storage/pools' in args[0]:
+                return {}
+            elif 'storage/volumeGroups' in args[0]:
+                raise exception.NexentaException
+
+        def get_side_effect2(*args, **kwargs):
+            if ('storage/pools' or 'storage/volumeGroups') in args[0]:
+                return {}
+            else:
+                return {'data': [{'name': 'iscsit', 'state': 'offline'}]}
+
+        self.nef_mock.get.side_effect = get_side_effect1
+        self.assertRaises(LookupError, self.drv.check_for_setup_error)
+        self.nef_mock.get.side_effect = get_side_effect2
         self.assertRaises(
             exception.NexentaException, self.drv.check_for_setup_error)
 
-        self.nef_mock.get.side_effect = exception.NexentaException()
-        self.assertRaises(LookupError, self.drv.check_for_setup_error)
-
     def test_create_volume(self):
         self.drv.create_volume(self.TEST_VOLUME_REF)
-        url = 'storage/pools/pool/volumeGroups/dsg/volumes'
+        url = 'storage/volumes'
         self.nef_mock.post.assert_called_with(url, {
-            'name': self.TEST_VOLUME_REF['name'],
+            'path': 'pool/vg/volume1',
             'volumeSize': 1 * units.Gi,
             'volumeBlockSize': 32768,
             'sparseVolume': self.cfg.nexenta_sparse})
 
     def test_delete_volume(self):
-        self.drv.collect_zfs_garbage = lambda x: None
-        self.nef_mock.delete.side_effect = exception.NexentaException(
-            'Failed to destroy snapshot')
+        self.nef_mock.get.return_value = {
+            'data': {'originalSnapshot': 'clone-1'}}
         self.assertIsNone(self.drv.delete_volume(self.TEST_VOLUME_REF))
-        url = 'storage/pools/pool/volumeGroups'
-        data = {'name': 'dsg', 'volumeBlockSize': 32768}
-        self.nef_mock.post.assert_called_with(url, data)
 
     def test_extend_volume(self):
         self.drv.extend_volume(self.TEST_VOLUME_REF, 2)
-        url = ('storage/pools/pool/volumeGroups/dsg/volumes/%(name)s') % {
-            'name': self.TEST_VOLUME_REF['name']}
+        url = 'storage/volumes/pool%2Fvg%2Fvolume1'
         self.nef_mock.put.assert_called_with(url, {
             'volumeSize': 2 * units.Gi})
 
     def test_delete_snapshot(self):
-        self.drv.collect_zfs_garbage = lambda x: None
         self._create_volume_db_entry()
-        url = ('storage/pools/pool/volumeGroups/dsg/'
-               'volumes/volume-1/snapshots/snapshot1')
+        url = ('storage/snapshots/pool%2Fvg%2Fvolume-1@snapshot1')
 
         self.nef_mock.delete.side_effect = exception.NexentaException(
             'Failed to destroy snapshot')
@@ -158,8 +165,7 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.nef_mock.delete.assert_called_with(url)
 
         self.nef_mock.delete.side_effect = exception.NexentaException('Error')
-        self.assertRaises(exception.NexentaException,
-                          self.drv.delete_snapshot, self.TEST_SNAPSHOT_REF)
+        self.assertIsNone(self.drv.delete_snapshot(self.TEST_SNAPSHOT_REF))
 
     @patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
            'NexentaISCSIDriver.create_snapshot')
@@ -180,9 +186,9 @@ class TestNexentaISCSIDriver(test.TestCase):
     def test_create_snapshot(self):
         self._create_volume_db_entry()
         self.drv.create_snapshot(self.TEST_SNAPSHOT_REF)
-        url = 'storage/pools/pool/volumeGroups/dsg/volumes/volume-1/snapshots'
+        url = 'storage/snapshots'
         self.nef_mock.post.assert_called_with(
-            url, {'name': 'snapshot1'})
+            url, {'path': 'pool/vg/volume-1@snapshot1'})
 
     def test_create_larger_volume_from_snapshot(self):
         self._create_volume_db_entry()
@@ -192,13 +198,16 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.drv.create_volume_from_snapshot(vol, src_vref)
 
         # make sure the volume get extended!
-        url = ('storage/pools/pool/volumeGroups/dsg/volumes/%(name)s') % {
-            'name': self.TEST_VOLUME_REF3['name']}
+        url = 'storage/volumes/pool%2Fvg%2Fvolume3'
         self.nef_mock.put.assert_called_with(url, {
             'volumeSize': 2 * units.Gi})
 
+    def fake_uuid4():
+        yield uuid.UUID('38d18a48-b791-4046-b523-a84aad966310')
+
+    @patch('uuid.uuid4', fake_uuid4().next)
     def test_do_export(self):
-        target_name = 'new_target'
+        target_name = 'iqn:%s' % '38d18a48b7914046b523a84aad966310'
         lun = 0
 
         class GetSideEffect(object):
@@ -243,7 +252,7 @@ class TestNexentaISCSIDriver(test.TestCase):
 
     def test_update_volume_stats(self):
         self.nef_mock.get.return_value = {
-            'bytesAvailable': 10 * units.Gi,
+            'bytesAvailable': 8 * units.Gi,
             'bytesUsed': 2 * units.Gi
         }
         location_info = '%(driver)s:%(host)s:%(pool)s/%(group)s' % {
@@ -261,6 +270,7 @@ class TestNexentaISCSIDriver(test.TestCase):
             'storage_protocol': 'iSCSI',
             'total_capacity_gb': 10,
             'free_capacity_gb': 8,
+            'sparsed_volumes': True,
             'reserved_percentage': self.cfg.reserved_percentage,
             'QoS_support': False,
             'volume_backend_name': self.drv.backend_name,

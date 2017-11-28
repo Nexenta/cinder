@@ -53,6 +53,7 @@ class TestNexentaJSONProxyAuth(test.TestCase):
         port = 8443
         auth_uri = 'auth/login'
         rnd_url = 'some/random/url'
+        ssl = False
 
         class PostSideEffect(object):
             def __call__(self, *args, **kwargs):
@@ -88,7 +89,7 @@ class TestNexentaJSONProxyAuth(test.TestCase):
                 return r
 
         nef = jsonrpc.NexentaJSONProxy(HOST, port, USERNAME, PASSWORD,
-                                       use_https)
+                                       use_https, ssl)
         adapter = TestAdapter()
         nef.session.mount('{}://{}:{}/{}'.format('https', HOST, port, rnd_url),
                           adapter)
@@ -111,7 +112,8 @@ class TestNexentaJSONProxy(test.TestCase):
 
     def setUp(self):
         super(TestNexentaJSONProxy, self).setUp()
-        self.nef = jsonrpc.NexentaJSONProxy(HOST, 0, USERNAME, PASSWORD, False)
+        self.nef = jsonrpc.NexentaJSONProxy(
+            HOST, 0, USERNAME, PASSWORD, False, False)
 
     def gen_adapter(self, code, json=None):
         class TestAdapter(adapters.HTTPAdapter):
