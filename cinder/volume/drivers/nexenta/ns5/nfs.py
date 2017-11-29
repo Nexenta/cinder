@@ -24,7 +24,7 @@ from oslo_utils import units
 from cinder import context
 from cinder import db
 from cinder import exception
-from cinder.i18n import _
+from cinder.i18n import _, _LE, _LI, _LW
 from cinder import interface
 from cinder.volume.drivers.nexenta.ns5 import jsonrpc
 from cinder.volume.drivers.nexenta import options
@@ -141,7 +141,8 @@ class NexentaNfsDriver(nfs.NfsDriver):
             self.nef.post(url, data)
         except exception.NexentaException as e:
             if 'EEXIST' in e.args[0]:
-                LOG.info('Filesystem %s already exists, using it.', filesystem)
+                LOG.info(_LI(
+                    'Filesystem %s already exists, using it.'), filesystem)
             else:
                 raise
         volume['provider_location'] = '%s:/%s/%s' % (
@@ -177,8 +178,8 @@ class NexentaNfsDriver(nfs.NfsDriver):
                     '%2F'.join([pool, fs, volume['name']]))
                 self.nef.delete(url)
             except exception.NexentaException:
-                LOG.warning("Cannot destroy created folder: "
-                            "%(vol)s/%(folder)s",
+                LOG.warning(_LE('Cannot destroy created folder: '
+                                '%(vol)s/%(folder)s'),
                             {'vol': pool, 'folder': '/'.join(
                                 [fs, volume['name']])})
             raise
@@ -199,9 +200,10 @@ class NexentaNfsDriver(nfs.NfsDriver):
             mount_path = self._get_mount_point_for_share(nfs_share)
 
         if mount_path not in self._remotefsclient._read_mounts():
-            LOG.info('NFS share %(share)s already unmounted from %(path)s.', {
-                     'share': nfs_share,
-                     'path': mount_path})
+            LOG.info(_LI(
+                'NFS share %(share)s already unmounted from %(path)s.'), {
+                'share': nfs_share,
+                'path': mount_path})
             return
 
         for attempt in range(num_attempts):
@@ -215,17 +217,17 @@ class NexentaNfsDriver(nfs.NfsDriver):
             except Exception as e:
                 msg = six.text_type(e)
                 if attempt == (num_attempts - 1):
-                    LOG.error('Unmount failure for %(share)s after '
-                              '%(count)d attempts.', {
-                                  'share': nfs_share,
-                                  'count': num_attempts})
+                    LOG.error(_LE('Unmount failure for %(share)s after '
+                                  '%(count)d attempts.'), {
+                              'share': nfs_share,
+                              'count': num_attempts})
                     raise exception.NfsException(msg)
-                LOG.warning('Unmount attempt %(attempt)d failed: %(msg)s. '
-                            'Retrying unmount %(share)s from %(path)s.', {
-                                'attempt': attempt,
-                                'msg': msg,
-                                'share': nfs_share,
-                                'path': mount_path})
+                LOG.warning(_LW('Unmount attempt %(attempt)d failed: %(msg)s. '
+                                'Retrying unmount %(share)s from %(path)s.'), {
+                            'attempt': attempt,
+                            'msg': msg,
+                            'share': nfs_share,
+                            'path': mount_path})
                 greenthread.sleep(1)
 
     def migrate_volume(self, ctxt, volume, host):
@@ -241,12 +243,12 @@ class NexentaNfsDriver(nfs.NfsDriver):
         false_ret = (False, None)
 
         if volume['status'] not in ('available', 'retyping'):
-            LOG.warning("Volume status must be 'available' or 'retyping'."
-                        " Current volume status: %s", volume['status'])
+            LOG.warning(_LW('Volume status must be "available" or "retyping".'
+                            ' Current volume status: %s'), volume['status'])
             return false_ret
 
         if 'capabilities' not in host:
-            LOG.warning("Unsupported host. No capabilities found")
+            LOG.warning(_LW('Unsupported host. No capabilities found'))
             return false_ret
 
         capabilities = host['capabilities']
@@ -313,8 +315,8 @@ class NexentaNfsDriver(nfs.NfsDriver):
         try:
             self.delete_volume(volume)
         except exception.NexentaException as exc:
-            LOG.warning("Cannot delete source volume %(volume)s on "
-                        "NexentaStor Appliance: %(exc)s",
+            LOG.warning(_LW('Cannot delete source volume %(volume)s on '
+                            'NexentaStor Appliance: %(exc)s'),
                         {'volume': volume['name'], 'exc': exc})
 
         return True, {'provider_location': provider_location}
@@ -378,7 +380,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         :param volume: volume reference
         :param new_size: volume new size in GB
         """
-        LOG.info('Extending volume: %(id)s New size: %(size)s GB',
+        LOG.info(_LI('Extending volume: %(id)s New size: %(size)s GB'),
                  {'id': volume.id, 'size': new_size})
         self._ensure_share_mounted('%s:/%s/%s' % (
             self.nas_host, self.share, volume['name']))
@@ -453,8 +455,8 @@ class NexentaNfsDriver(nfs.NfsDriver):
                     '%2F'.join([pool, fs, volume['name']]))
                 self.nef.delete(url)
             except exception.NexentaException:
-                LOG.warning("Cannot destroy cloned filesystem: "
-                            "%(vol)s/%(filesystem)s",
+                LOG.warning(_LW('Cannot destroy cloned filesystem: '
+                                '%(vol)s/%(filesystem)s'),
                             {'vol': dataset_path,
                              'filesystem': volume['name']})
             raise
@@ -471,7 +473,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         :param volume: new volume reference
         :param src_vref: source volume reference
         """
-        LOG.info('Creating clone of volume: %s', src_vref['id'])
+        LOG.info(_LI('Creating clone of volume: %s'), src_vref['id'])
         snapshot = {'volume_name': src_vref['name'],
                     'volume_id': src_vref['id'],
                     'volume_size': src_vref['size'],
@@ -481,13 +483,13 @@ class NexentaNfsDriver(nfs.NfsDriver):
             pl = self.create_volume_from_snapshot(volume, snapshot)
             return pl
         except exception.NexentaException:
-            LOG.error('Volume creation failed, deleting created snapshot '
-                      '%(volume_name)s@%(name)s', snapshot)
+            LOG.error(_LE('Volume creation failed, deleting created snapshot '
+                          '%(volume_name)s@%(name)s'), snapshot)
             try:
                 self.delete_snapshot(snapshot)
             except (exception.NexentaException, exception.SnapshotIsBusy):
-                LOG.warning('Failed to delete zfs snapshot '
-                            '%(volume_name)s@%(name)s', snapshot)
+                LOG.warning(_LW('Failed to delete zfs snapshot '
+                                '%(volume_name)s@%(name)s'), snapshot)
             raise
 
     def local_path(self, volume):

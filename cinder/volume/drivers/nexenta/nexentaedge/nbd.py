@@ -23,7 +23,7 @@ from oslo_utils import excutils
 from oslo_utils import units
 
 from cinder import exception
-from cinder.i18n import _
+from cinder.i18n import _, _LE, _LI, _LW
 from cinder.image import image_utils
 from cinder import interface
 from cinder import utils as cinder_utils
@@ -106,7 +106,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
             self.restapi.get(self.bucket_url + '/objects/')
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error verifying container %(bkt)s',
+                LOG.exception(_LE('Error verifying container %(bkt)s'),
                               {'bkt': self.bucket_path})
 
     def _get_nbd_devices(self, host):
@@ -115,7 +115,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
                                    self._get_remote_url(host))
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error getting NBD list')
+                LOG.exception(_LE('Error getting NBD list'))
         return json.loads(rsp['value'])
 
     def _get_nbd_number(self, volume):
@@ -135,7 +135,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
                     return servers[sid]
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error getting host info')
+                LOG.exception(_LE('Error getting host info'))
         raise exception.VolumeBackendAPIException(
             data=_('No %s hostname in NEdge cluster') % host)
 
@@ -171,17 +171,16 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
                 check_exit_code=True)
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error creating volume')
+                LOG.exception(_LE('Error creating volume'))
 
     def delete_volume(self, volume):
         LOG.debug('Delete volume')
         number = self._get_nbd_number(volume)
         if number == -1:
-            LOG.info('Volume %(volume)s does not exist at %(path)s '
-                     'path' % {
-                'volume': volume['name'],
-                'path': self.bucket_path
-            })
+            LOG.info(_LI('Volume %(volume)s does not exist at %(path)s '
+                         'path'),
+                     {'volume': volume['name'],
+                      'path': self.bucket_path})
             return
         host = volutils.extract_host(volume['host'], 'host')
         try:
@@ -191,7 +190,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
             })
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error deleting volume')
+                LOG.exception(_LE('Error deleting volume'))
 
     def extend_volume(self, volume, new_size):
         LOG.debug('Extend volume')
@@ -203,7 +202,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
             })
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error extending volume')
+                LOG.exception(_LE('Error extending volume'))
 
     def create_snapshot(self, snapshot):
         LOG.debug('Create snapshot')
@@ -240,29 +239,6 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
         return 'cinder-clone-snapshot-%(id)s' % volume
 
     def create_cloned_volume(self, volume, src_vref):
-        """
-        vol_url = (self.bucket_url + '/objects/' +
-                   src_vref['name'] + '/clone')
-        clone_body = {
-            'tenant_name': self.tenant,
-            'bucket_name': self.bucket,
-            'object_name': volume['name']
-        }
-        host = volutils.extract_host(volume['host'], 'host')
-        size = volume['size'] if volume['size'] > src_vref['size'] else (
-            src_vref['size'])
-        try:
-            self.restapi.post(vol_url, clone_body)
-            self.restapi.post('nbd' + self._get_remote_url(host), {
-                'objectPath': self.bucket_path + '/' + volume['name'],
-                'volSizeMB': int(size) * units.Ki,
-                'blockSize': self.blocksize,
-                'chunkSize': self.chunksize
-            })
-        except exception.VolumeBackendAPIException:
-            with excutils.save_and_reraise_exception():
-                LOG.exception('Error creating cloned volume')
-        """
         LOG.debug('Create cloned volume')
 
         snapshot = {'volume_name': src_vref['name'],
@@ -275,15 +251,15 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
         try:
             self.create_volume_from_snapshot(volume, snapshot)
         except exception.NexentaException:
-            LOG.error('Volume creation failed, deleting created snapshot '
-                      '%s', '@'.join(
+            LOG.error(_LE('Volume creation failed, deleting created snapshot '
+                          '%s'), '@'.join(
                 [snapshot['volume_name'], snapshot['name']]))
             try:
                 self.delete_snapshot(snapshot)
             except (exception.NexentaException, exception.SnapshotIsBusy):
-                LOG.warning('Failed to delete zfs snapshot '
-                            '%s', '@'.join(
-                    [snapshot['volume_name'], snapshot['name']]))
+                LOG.warning(_LW('Failed to delete zfs snapshot '
+                                '%s'), '@'.join([snapshot['volume_name'],
+                                                 snapshot['name']]))
             raise
 
     def migrate_volume(self, ctxt, volume, host, thin=False, mirror_count=0):
@@ -315,7 +291,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
             }
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error creating snapshot')
+                LOG.exception(_LE('Error creating snapshot'))
 
     def copy_image_to_volume(self, context, volume, image_service, image_id):
         LOG.debug('Copy image to volume')
@@ -353,7 +329,7 @@ class NexentaEdgeNBDDriver(driver.VolumeDriver):
                     return
         except exception.VolumeBackendAPIException:
             with excutils.save_and_reraise_exception():
-                LOG.exception('Error retrieving cluster stats')
+                LOG.exception(_LE('Error retrieving cluster stats'))
         raise exception.VolumeBackendAPIException(
             data=_('No %s hostname in NEdge cluster') % connector['host'])
 
