@@ -20,7 +20,7 @@ import time
 from oslo_log import log as logging
 
 from cinder import exception
-from cinder.i18n import _
+from cinder.i18n import _, _LI
 from cinder.utils import retry
 from oslo_serialization import jsonutils
 from requests.cookies import extract_cookies_to_jar
@@ -139,8 +139,10 @@ class RESTCaller(object):
 
     def handle_failover(self):
         if self.__proxy.backup:
-            LOG.info('Server %s is unavailable, failing over to %s',
-                     self.__proxy.host, self.__proxy.backup)
+            LOG.info(_LI('Server %(primary)s is unavailable, '
+                         'failing over to %(backup)s'), {
+                'primary': self.__proxy.host,
+                'backup': self.__proxy.backup})
             host = '%s,%s' % (self.__proxy.backup, self.__proxy.host)
             self.__proxy.__init__(
                 host, self.__proxy.port, self.__proxy.user,
