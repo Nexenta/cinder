@@ -75,11 +75,19 @@ NEXENTA_ISCSI_OPTS = [
     cfg.StrOpt('nexenta_iscsi_target_portal_groups',
                default='',
                help='Nexenta target portal groups'),
+    cfg.StrOpt('nexenta_iscsi_target_portals',
+               default='',
+               help='Comma separated list of portals for NexentaStor5, in'
+                    'format of IP1:port1,IP2:port2. Port is optional, '
+                    'default=3260. Example: 10.10.10.1:3267,10.10.1.2'),
+    cfg.StrOpt('nexenta_iscsi_target_host_group',
+               default='all',
+               help='Group of hosts which are allowed to access volumes'),
     cfg.IntOpt('nexenta_iscsi_target_portal_port',
                default=3260,
                help='Nexenta target portal port'),
     cfg.IntOpt('nexenta_luns_per_target',
-               default=20,
+               default=100,
                help='Amount of iSCSI LUNs per each target'),
     cfg.StrOpt('nexenta_volume',
                default='cinder',
@@ -92,7 +100,7 @@ NEXENTA_ISCSI_OPTS = [
                help='Prefix for iSCSI target groups on SA'),
     cfg.StrOpt('nexenta_volume_group',
                default='iscsi',
-               help='Volume group for ns5'),
+               help='Volume group for NexentaStor5 iSCSI'),
 ]
 
 NEXENTA_NFS_OPTS = [
