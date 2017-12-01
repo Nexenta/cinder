@@ -385,7 +385,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         lpt = self.configuration.nexenta_luns_per_target
         tg = ''
         map_dict = {}
-        # Check whether the volume is exported
+        # Find out whether the volume is exported
         url = 'san/lunMappings'
         data = self.nef.get(url).get('data')
         if data:
@@ -394,7 +394,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                     # Found the right mapping
                     tg = mapping['targetGroup']
                     tg_data = self.nef.get('san/targetgroups?name=%s' % tg)
-                    target_name = tg_data['data'][0]['members'][0]
+                    target_name = tg_data['members'][0]
                     provider_location = (
                         '%(host)s:%(port)s,1 %(name)s %(lun)s') % {
                         'host': self.iscsi_host,
@@ -416,7 +416,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 self.configuration.nexenta_target_prefix)
         else:
             # Create new target and TG
-            target_name = self.target_prefix + '+' + uuid.uuid4().hex
+            target_name = self.target_prefix + uuid.uuid4().hex
             url = 'san/iscsi/targets'
             portals = []
             if self.portals:
