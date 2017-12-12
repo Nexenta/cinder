@@ -85,7 +85,7 @@ class RESTCaller(object):
             response = getattr(
                 self.__proxy.session, self.__method)(url, **kwargs)
         except requests.exceptions.ConnectionError:
-            LOG.debug('ConnectionError on call to NS: %s %s, data: %s',
+            LOG.debug('ConnectionError call to NS: %s %s, data: %s',
                       self.__proxy.url, self.__method, data)
             self.handle_failover()
             url = self.get_full_url(args[0])
