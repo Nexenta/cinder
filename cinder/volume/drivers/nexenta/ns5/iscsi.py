@@ -396,7 +396,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                     # Found the right mapping
                     tg = mapping['targetGroup']
                     tg_data = self.nef.get('san/targetgroups?name=%s' % tg)
-                    target_name = tg_data['members'][0]
+                    LOG.warning(tg_data)
+                    target_name = tg_data['data'][0]['members'][0]
                     provider_location = (
                         '%(host)s:%(port)s,1 %(name)s %(lun)s') % {
                         'host': self.iscsi_host,
