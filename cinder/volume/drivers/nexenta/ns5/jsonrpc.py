@@ -81,10 +81,10 @@ class RESTCaller(object):
         try:
             check_error(response)
         except exception.NexentaException as exc:
-            if exc.kwargs['message']['code'] == 'ENOENT':
+            if exc.msg['code'] == 'ENOENT':
                 LOG.debug('NexentaException on call to NS: %s %s, data: %s',
-                          'returned message: %s',
-                          url, self.__method, data, exc.kwargs['message'])
+                          url, self.__method, data)
+                LOG.debug('returned message: %s', exc)
                 self.handle_failover()
                 url = self.get_full_url(args[0])
                 response = getattr(
@@ -108,11 +108,10 @@ class RESTCaller(object):
                 try:
                     check_error(response)
                 except exception.NexentaException as exc:
-                    if exc.kwargs['message']['code'] == 'ENOENT':
-                        LOG.debug(
-                            'NexentaException on call to NS: %s %s, data: %s'
-                            'returned message: %s',
-                            url, self.__method, data, exc.kwargs['message'])
+                    if exc.msg['code'] == 'ENOENT':
+                        LOG.debug('NexentaException on call to NS: %s %s, '
+                                  'data: %s', url, self.__method, data)
+                        LOG.debug('returned message: %s', exc)
                         self.handle_failover()
                         url = self.get_full_url(args[0])
                         response = getattr(
