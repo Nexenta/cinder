@@ -378,6 +378,16 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             self.configuration.nexenta_target_group_prefix
         )
 
+    def _check_target_and_portals(self, tg):
+        target_name = tg.replace(
+            self.configuration.nexenta_target_group_prefix,
+            self.configuration.nexenta_target_prefix)
+        target = self.nef.get('san/iscsi/targets/%s' % target_name)
+        for portal in target['portals']:
+            if portal['address'] == self.iscsi_host:
+                return target_name
+        return ''
+
     def _do_export(self, _ctx, volume):
         """Do all steps to get zfs volume exported at separate target.
 
@@ -408,15 +418,17 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             # Find correct TG with lowest LUNs
             for m in data:
                 map_dict.setdefault(m['targetGroup'], []).append(m)
-            tg = min({k: v for k, v in map_dict.items() if k.startswith(
-                self.configuration.nexenta_target_group_prefix)} or '')
+            target_name = ''
+            while not target_name and map_dict:
+                tg = min({k: v for k, v in map_dict.items() if k.startswith(
+                    self.configuration.nexenta_target_group_prefix)} or '')
+                if tg and len(map_dict.get(tg)) <= lpt:
+                    target_name = self._check_target_and_portals(tg)
+                    del map_dict[tg]
+                else:
+                    map_dict = {}
 
-        if tg and len(map_dict.get(tg)) <= lpt:
-            # Found right TG
-            target_name = tg.replace(
-                self.configuration.nexenta_target_group_prefix,
-                self.configuration.nexenta_target_prefix)
-        else:
+        if not target_name:
             # Create new target and TG
             target_name = self.target_prefix + '+' + uuid.uuid4().hex
             url = 'san/iscsi/targets'
