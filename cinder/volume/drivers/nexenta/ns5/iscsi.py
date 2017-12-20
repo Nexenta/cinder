@@ -1,4 +1,4 @@
-# Copyright 2016 Nexenta Systems, Inc.
+# Copyright 2017 Nexenta Systems, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -275,7 +275,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                                            snapshot['name']]))
             raise
 
-    def create_export(self, _ctx, volume, connector):
+    def create_export(self, _ctx, volume):
         """Create new export for zfs volume.
 
         :param volume: reference of volume to be exported

@@ -1,4 +1,4 @@
-# Copyright 2015 Nexenta Systems, Inc.
+# Copyright 2017 Nexenta Systems, Inc.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -16,6 +16,7 @@
 import json
 import requests
 import time
+import urllib3
 
 from oslo_log import log as logging
 
@@ -27,6 +28,7 @@ from requests.cookies import extract_cookies_to_jar
 
 LOG = logging.getLogger(__name__)
 TIMEOUT = 60
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def check_error(response):
@@ -67,20 +69,18 @@ class RESTCaller(object):
     def __call__(self, *args):
         url = self.get_full_url(args[0])
         kwargs = {'timeout': TIMEOUT, 'verify': self.__proxy.verify}
-        data = None
         if len(args) > 1:
             kwargs['data'] = json.dumps(args[1])
-            data = args[1]
 
         LOG.debug('Issuing call to NS: %s %s, data: %s',
-                  url, self.__method, data)
+                  url, self.__method, kwargs['data'])
 
         try:
             response = getattr(
                 self.__proxy.session, self.__method)(url, **kwargs)
         except requests.exceptions.ConnectionError:
             LOG.debug('ConnectionError on call to NS: %s %s, data: %s',
-                      self.__proxy.url, self.__method, data)
+                      self.__proxy.url, self.__method, kwargs['data'])
             self.handle_failover()
             url = self.get_full_url(args[0])
             response = getattr(
@@ -90,8 +90,8 @@ class RESTCaller(object):
         except exception.NexentaException as exc:
             if exc.kwargs['message']['code'] == 'ENOENT':
                 LOG.debug('NexentaException on call to NS: %s %s, data: %s',
-                          'returned message: %s',
-                          url, self.__method, data, exc.kwargs['message'])
+                          'returned message: %s', url, self.__method,
+                          kwargs['data'], exc.kwargs['message'])
                 self.handle_failover()
                 url = self.get_full_url(args[0])
                 response = getattr(
