@@ -12,11 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-"""
-:mod:`nexenta.options` -- Contains configuration options for Nexenta drivers.
-=============================================================================
-.. automodule:: nexenta.options
-"""
 
 from oslo_config import cfg
 
@@ -26,9 +21,6 @@ NEXENTA_EDGE_OPTS = [
                default='/dev/disk/by-path',
                help='NexentaEdge logical path of directory to store symbolic '
                     'links to NBDs'),
-    cfg.StrOpt('nexenta_rest_address',
-               default='',
-               help='IP address of NexentaEdge management REST API endpoint'),
     cfg.StrOpt('nexenta_rest_user',
                default='admin',
                help='User name to connect to NexentaEdge'),
@@ -52,16 +44,28 @@ NEXENTA_EDGE_OPTS = [
 ]
 
 NEXENTA_CONNECTION_OPTS = [
+    cfg.StrOpt('nexenta_rest_address',
+               default='',
+               help='IP address of NexentaEdge management REST API endpoint'),
     cfg.StrOpt('nexenta_host',
                default='',
                help='IP address of Nexenta SA'),
     cfg.IntOpt('nexenta_rest_port',
-               default=8080,
-               help='HTTP port to connect to Nexenta REST API server'),
+               default=0,
+               help='HTTP(S) port to connect to Nexenta REST API server. '
+                    'If it is equal zero, 8443 for HTTPS and 8080 for HTTP '
+                    'is used'),
     cfg.StrOpt('nexenta_rest_protocol',
                default='auto',
                choices=['http', 'https', 'auto'],
                help='Use http or https for REST connection (default auto)'),
+    cfg.BoolOpt('nexenta_use_https',
+                default=True,
+                help='Use secure HTTP for REST connection (default True)'),
+    cfg.BoolOpt('driver_ssl_cert_verify',
+                default=False,
+                help='If set to True the http client will validate the SSL '
+                     'certificate of the backend endpoint.'),
     cfg.StrOpt('nexenta_user',
                default='admin',
                help='User name to connect to Nexenta SA'),
@@ -72,21 +76,35 @@ NEXENTA_CONNECTION_OPTS = [
 ]
 
 NEXENTA_ISCSI_OPTS = [
+    cfg.StrOpt('nexenta_iscsi_target_portal_groups',
+               default='',
+               help='Nexenta target portal groups'),
+    cfg.StrOpt('nexenta_iscsi_target_portals',
+               default='',
+               help='Comma separated list of portals for NexentaStor5, in'
+                    'format of IP1:port1,IP2:port2. Port is optional, '
+                    'default=3260. Example: 10.10.10.1:3267,10.10.1.2'),
+    cfg.StrOpt('nexenta_iscsi_target_host_group',
+               default='all',
+               help='Group of hosts which are allowed to access volumes'),
     cfg.IntOpt('nexenta_iscsi_target_portal_port',
                default=3260,
                help='Nexenta target portal port'),
+    cfg.IntOpt('nexenta_luns_per_target',
+               default=100,
+               help='Amount of iSCSI LUNs per each target'),
     cfg.StrOpt('nexenta_volume',
                default='cinder',
                help='SA Pool that holds all volumes'),
     cfg.StrOpt('nexenta_target_prefix',
-               default='iqn.1986-03.com.sun:02:cinder-',
+               default='iqn.1986-03.com.sun:02:cinder',
                help='IQN prefix for iSCSI targets'),
     cfg.StrOpt('nexenta_target_group_prefix',
-               default='cinder/',
+               default='cinder',
                help='Prefix for iSCSI target groups on SA'),
     cfg.StrOpt('nexenta_volume_group',
                default='iscsi',
-               help='Volume group for ns5'),
+               help='Volume group for NexentaStor5 iSCSI'),
 ]
 
 NEXENTA_NFS_OPTS = [
@@ -119,6 +137,9 @@ NEXENTA_DATASET_OPTS = [
                default='off',
                choices=['on', 'off', 'sha256', 'verify', 'sha256, verify'],
                help='Deduplication value for new ZFS folders.'),
+    cfg.StrOpt('nexenta_folder',
+               default='',
+               help='A folder where cinder created datasets will reside.'),
     cfg.StrOpt('nexenta_dataset_description',
                default='',
                help='Human-readable description for the folder.'),
