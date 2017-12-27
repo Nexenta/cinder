@@ -430,7 +430,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
 
         if not target_name:
             # Create new target and TG
-            target_name = self.target_prefix + '+' + uuid.uuid4().hex
+            target_name = self.target_prefix + '-' + uuid.uuid4().hex
             url = 'san/iscsi/targets'
             portals = []
             if self.portals:
