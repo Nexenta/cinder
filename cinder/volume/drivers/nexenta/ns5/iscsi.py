@@ -394,6 +394,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         volume_path = self._get_volume_path(volume)
         lpt = self.configuration.nexenta_luns_per_target
         tg = ''
+        target_name = ''
         map_dict = {}
         target_name = ''
         # Check whether the volume is exported
