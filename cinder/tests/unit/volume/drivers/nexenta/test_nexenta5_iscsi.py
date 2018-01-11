@@ -75,7 +75,7 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_rest_port = 2000
         self.cfg.nexenta_use_https = False
         self.cfg.nexenta_iscsi_target_portal_port = 8080
-        self.cfg.nexenta_target_prefix = 'iqn:'
+        self.cfg.nexenta_target_prefix = 'iqn:cinder'
         self.cfg.nexenta_target_group_prefix = 'cinder/'
         self.cfg.nexenta_ns5_blocksize = 32
         self.cfg.nexenta_sparse = True
@@ -85,6 +85,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_volume = 'pool'
         self.cfg.nexenta_luns_per_target = 20
         self.cfg.driver_ssl_cert_verify = False
+        self.cfg.nexenta_iscsi_target_portals = ''
+        self.cfg.nexenta_iscsi_target_host_group = 'all'
         self.cfg.nexenta_rest_address = '1.1.1.1'
         self.cfg.nexenta_volume_group = 'vg'
         self.nef_mock = mock.Mock()
@@ -207,7 +209,7 @@ class TestNexentaISCSIDriver(test.TestCase):
 
     @patch('uuid.uuid4', fake_uuid4().next)
     def test_do_export(self):
-        target_name = 'iqn:%s' % '38d18a48b7914046b523a84aad966310'
+        target_name = 'iqn:cinder-%s' % '38d18a48b7914046b523a84aad966310'
         lun = 0
 
         class GetSideEffect(object):
@@ -216,7 +218,7 @@ class TestNexentaISCSIDriver(test.TestCase):
 
             def __call__(self, *args, **kwargs):
                 # Find out whether the volume is exported
-                if 'san/lunMappings?volume=' in args[0]:
+                if 'san/lunMappings' in args[0]:
                     self.lm_counter += 1
                     # a value for the first call
                     if self.lm_counter == 0:
