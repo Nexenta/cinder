@@ -105,15 +105,11 @@ class NexentaNfsDriver(nfs.NfsDriver):  # pylint: disable=R0921
 
                 self._share_folder(nef, pool_name, dataset)
                 canonical_name = '%s/%s' % (pool_name, dataset)
-                shared = False
-                response = nef('nas/nfs')
-                for share in response['data']:
-                    if share.get('datasetName') == canonical_name:
-                        shared = True
-                        break
-                if not shared:
-                    raise LookupError(_("Dataset %s is not shared in Nexenta "
-                                        "Store appliance"), canonical_name)
+                url = 'nas/nfs?filesystem=%s' % urllib.parse.quote_plus(canonical_name)
+                data = self.nef.get(url).get('data')
+                if not (data and data[0].get('shareState') == 'online'):
+                    raise LookupError(
+                        _('NFS share %s is not accessible') % canonical_name
 
     def initialize_connection(self, volume, connector):
         """Allow connection to connector and return connection info.
