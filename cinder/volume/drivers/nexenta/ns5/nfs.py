@@ -347,7 +347,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         if not data:
             return
         origin = data[0].get('originalSnapshot')
-        url = 'storage/filesystems/%s?snapshots=true' % '%2F'.join(
+        url = 'storage/filesystems/%s?force=true&snapshots=true' % '%2F'.join(
             [pool, fs, volume['name']])
         try:
             self.nef.delete(url)
@@ -368,7 +368,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
                 url = 'storage/filesystems/%s/promote' % (
                     urllib.parse.quote_plus(clone))
                 self.nef.post(url)
-                url = 'storage/filesystems/%s?snapshots=true' % '%2F'.join(
+                url = 'storage/filesystems/%s?force=true&snapshots=true' % '%2F'.join(
                     [pool, fs, volume['name']])
                 self.nef.delete(url)
             else:
