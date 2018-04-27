@@ -257,7 +257,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         volume_path = self._get_volume_path(volume)
         LOG.debug('Reverting volume %s to snapshot %s.' % (
             volume_path, snapshot['name']))
-        url = 'storage/volumes/%s/rollback' % volume_path
+        url = 'storage/volumes/%s/rollback' % urllib.parse.quote_plus(
+            volume_path)
         self.nef.post(url, {'snapshot': snapshot['name']})
 
     def create_volume_from_snapshot(self, volume, snapshot):
