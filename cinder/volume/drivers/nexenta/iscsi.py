@@ -30,7 +30,7 @@ from cinder.volume.drivers.nexenta import jsonrpc
 from cinder.volume.drivers.nexenta import options
 from cinder.volume.drivers.nexenta import utils
 
-VERSION = '1.3.5'
+VERSION = '1.3.6'
 LOG = logging.getLogger(__name__)
 
 
@@ -66,6 +66,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                 Fixed collection of backend statistics.
                 Refactored LUN creation, use host group for LUN mappings.
                 Added deferred deletion for snapshots.
+        1.3.6 - Added consistency group support.
     """
 
     VERSION = VERSION
@@ -113,6 +114,10 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         self.rrmgr_connections = self.configuration.nexenta_rrmgr_connections
         self.portal_port = self.configuration.nexenta_iscsi_target_portal_port
         self.lock = hashlib.md5(options.DEFAULT_NMS_LOCK).hexdigest()
+        if self.folder:
+            self.dataset = '%s/%s' % (self.volume, self.folder)
+        else:
+            self.dataset = self.volume
 
     @property
     def backend_name(self):
@@ -136,19 +141,14 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                    % {'volume': self.volume})
             raise exception.NexentaException(msg)
         if self.folder:
-            folder = '%s/%s' % (self.volume, self.folder)
-            if not self.nms.folder.object_exists(folder):
+            if not self.nms.folder.object_exists(self.dataset):
                 msg = (_('Folder %(folder)s not found')
-                       % {'folder': folder})
+                       % {'folder': self.folder})
                 raise exception.NexentaException(msg)
 
     def _get_zvol_path(self, volume_name):
         """Return zvol path that corresponds given volume name."""
-        if self.folder:
-            path = '%s/%s' % (self.volume, self.folder)
-        else:
-            path = self.volume
-        return '%s/%s' % (path, volume_name)
+        return '%s/%s' % (self.dataset, volume_name)
 
     def _create_target_group(self, group, target):
         """Create a new target group with target member.
@@ -185,15 +185,15 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                     raise ex
 
     @staticmethod
-    def _get_clone_snapshot_name(volume):
+    def _get_clone_snapshot_name(volume_id):
         """Return name for snapshot that will be used to clone the volume."""
-        return 'cinder-clone-snapshot-%(id)s' % volume
+        return 'cinder-clone-snapshot-%s' % volume_id
 
     @staticmethod
-    def _is_clone_snapshot_name(snapshot):
+    def _is_clone_snapshot_name(snapshot_path):
         """Check if snapshot is created for cloning."""
-        zvol_path, snap_name = snapshot.split('@')
-        return snap_name.startswith('cinder-clone-snapshot-')
+        volume_path, snapshot_name = snapshot_path.split('@')
+        return snapshot_name.startswith('cinder-clone-snapshot-')
 
     def create_volume(self, volume):
         """Create a zvol on appliance.
@@ -264,8 +264,10 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         :param volume: new volume reference
         :param src_vref: source volume reference
         """
-        snapshot = {'volume_name': src_vref['name'],
-                    'name': self._get_clone_snapshot_name(volume),
+        snapshot_name = self._get_clone_snapshot_name(volume['id'])
+        snapshot = {'name': snapshot_name,
+                    'volume_id': src_vref['id'],
+                    'volume_name': src_vref['name'],
                     'volume_size': src_vref['size']}
         LOG.debug('Create temporary snapshot %(snapshot)s '
                   'for the original volume %(volume)s',
@@ -1049,6 +1051,116 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                            'hg': mapping_hg})
         return info
 
+    def create_consistencygroup(self, context, group):
+        """Creates a consistencygroup.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be created.
+        :returns: group_model_update
+        """
+        group_model_update = {}
+        return group_model_update
+
+    def delete_consistencygroup(self, context, group, volumes):
+        """Deletes a consistency group.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be deleted.
+        :param volumes: a list of volume dictionaries in the group.
+        :returns: group_model_update, volumes_model_update
+        """
+        group_model_update = {}
+        volumes_model_update = []
+        for volume in volumes:
+            self.delete_volume(volume)
+        return group_model_update, volumes_model_update
+
+    def update_consistencygroup(self, context, group,
+                                add_volumes=None,
+                                remove_volumes=None):
+        """Updates a consistency group.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be updated.
+        :param add_volumes: a list of volume dictionaries to be added.
+        :param remove_volumes: a list of volume dictionaries to be removed.
+        :returns: group_model_update, add_volumes_update, remove_volumes_update
+        """
+        group_model_update = {}
+        add_volumes_update = []
+        remove_volumes_update = []
+        return group_model_update, add_volumes_update, remove_volumes_update
+
+    def create_cgsnapshot(self, context, cgsnapshot, snapshots):
+        """Creates a consistency group snapshot.
+
+        :param context: the context of the caller.
+        :param cgsnapshot: the dictionary of the cgsnapshot to be created.
+        :param snapshots: a list of snapshot dictionaries in the cgsnapshot.
+        :returns: group_model_update, snapshots_model_update
+        """
+        group_model_update = {}
+        snapshots_model_update = []
+        cgsnapshot_name = 'cgsnapshot-%s' % cgsnapshot['id']
+        self.nms.folder.create_snapshot(self.dataset, cgsnapshot_name, '-r')
+        for snapshot in snapshots:
+            volume_path = self._get_zvol_path(snapshot['volume_name'])
+            cgsnapshot_path = '%s@%s' % (volume_path, cgsnapshot_name)
+            self.nms.snapshot.rename(cgsnapshot_path, snapshot['name'], '')
+        cgsnapshot_path = '%s@%s' % (self.dataset, cgsnapshot_name)
+        self.nms.snapshot.destroy(cgsnapshot_path, '-rd')
+        return group_model_update, snapshots_model_update
+
+    def delete_cgsnapshot(self, context, cgsnapshot, snapshots):
+        """Deletes a consistency group snapshot.
+
+        :param context: the context of the caller.
+        :param cgsnapshot: the dictionary of the cgsnapshot to be created.
+        :param snapshots: a list of snapshot dictionaries in the cgsnapshot.
+        :returns: group_model_update, snapshots_model_update
+        """
+        group_model_update = {}
+        snapshots_model_update = []
+        for snapshot in snapshots:
+            self.delete_snapshot(snapshot)
+        return group_model_update, snapshots_model_update
+
+    def create_consistencygroup_from_src(self, context, group, volumes,
+                                         cgsnapshot=None, snapshots=None,
+                                         source_cg=None, source_vols=None):
+        """Creates a consistency group from source.
+
+        :param context: the context of the caller.
+        :param group: the dictionary of the consistency group to be created.
+        :param volumes: a list of volume dictionaries in the group.
+        :param cgsnapshot: the dictionary of the cgsnapshot as source.
+        :param snapshots: a list of snapshot dictionaries in the cgsnapshot.
+        :param source_cg: the dictionary of a consistency group as source.
+        :param source_vols: a list of volume dictionaries in the source_cg.
+        :returns: group_model_update, volumes_model_update
+        """
+        group_model_update = {}
+        volumes_model_update = []
+        if cgsnapshot and snapshots:
+            for volume, snapshot in zip(volumes, snapshots):
+                self.create_volume_from_snapshot(volume, snapshot)
+        elif source_cg and source_vols:
+            cgsnapshot_name = 'cgsnapshot-%s' % group['id']
+            self.nms.folder.create_snapshot(self.dataset, cgsnapshot_name, '-r')
+            for volume, source_vol in zip(volumes, source_vols):
+                source_vol_path = self._get_zvol_path(source_vol['name'])
+                cgsnapshot_path = '%s@%s' % (source_vol_path, cgsnapshot_name)
+                snapshot_name = self._get_clone_snapshot_name(volume['id'])
+                self.nms.snapshot.rename(cgsnapshot_path, snapshot_name, '')
+                snapshot = {'name': snapshot_name,
+                            'volume_id': source_vol['id'],
+                            'volume_name': source_vol['name'],
+                            'volume_size': source_vol['size']}
+                self.create_volume_from_snapshot(volume, snapshot)
+            cgsnapshot_path = '%s@%s' % (self.dataset, cgsnapshot_name)
+            self.nms.snapshot.destroy(cgsnapshot_path, '-rd')
+        return group_model_update, volumes_model_update
+
     def get_volume_stats(self, refresh=False):
         """Get volume stats.
 
@@ -1064,20 +1176,15 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         LOG.debug('Update backend %(backend)s statistics',
                   {'backend': self.backend_name})
 
-        if self.folder:
-            path = '%s/%s' % (self.volume, self.folder)
-        else:
-            path = self.volume
-
-        stats = self.nms.folder.get_child_props(path, 'available|used')
+        stats = self.nms.folder.get_child_props(self.dataset, 'available|used')
         free_amount = utils.str2gib_size(stats['available'])
         used_amount = utils.str2gib_size(stats['used'])
         total_amount = free_amount + used_amount
 
-        location_info = '%(driver)s:%(host)s:%(volume)s' % {
+        location_info = '%(driver)s:%(host)s:%(dataset)s' % {
             'driver': self.__class__.__name__,
             'host': self.nms_host,
-            'volume': self.volume
+            'dataset': self.dataset
         }
 
         self._stats = {
@@ -1094,6 +1201,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             'multiattach': False,
             'QoS_support': False,
             'thin_provisioning_support': self.volume_sparse,
+            'consistencygroup_support': True,
+            'consistent_group_snapshot_enabled': True,
             'volume_backend_name': self.backend_name,
             'location_info': location_info,
             'iscsi_target_portal_port': self.portal_port,
