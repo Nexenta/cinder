@@ -30,10 +30,11 @@ from requests.packages.urllib3 import exceptions
 
 LOG = logging.getLogger(__name__)
 TIMEOUT = 60
-APPLIANCE ='NexentaStor Appliance'
+APPLIANCE = 'NexentaStor Appliance'
 
 requests.packages.urllib3.disable_warnings(exceptions.InsecureRequestWarning)
 requests.packages.urllib3.disable_warnings(exceptions.InsecurePlatformWarning)
+
 
 def check_error(response):
     code = response.status_code
@@ -59,6 +60,7 @@ def check_error(response):
                   'reason': reason,
                   'content': content})
         raise exception.NexentaException(msg)
+
 
 class RESTCaller(object):
 
@@ -119,7 +121,7 @@ class RESTCaller(object):
                              'message': six.text_type(err)})
                 if (err['source'] == 'hpr' and
                         'Destination pool' in err['message']):
-                    return content
+                    return None
                 self.handle_failover()
                 url = self.get_full_url(args[0])
                 response = getattr(
@@ -304,6 +306,7 @@ class HTTPSAuth(requests.auth.AuthBase):
                   'code': response.status_code,
                   'reason': response.reason})
         raise exception.NexentaException(msg)
+
 
 class NexentaJSONProxy(object):
 
