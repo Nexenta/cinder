@@ -24,8 +24,6 @@ from oslo_log import log as logging
 from oslo_utils import units
 from six.moves import urllib
 
-from cinder import context
-from cinder import db
 from cinder import exception
 from cinder.i18n import _
 from cinder import interface
@@ -270,8 +268,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
     def revert_to_snapshot(self, context, volume, snapshot):
         """Revert volume to snapshot."""
         LOG.debug('Revert volume %(volume)s to snapshot %(snapshot)s',
-                 {'volume': volume['name'],
-                  'snapshot': snapshot['name']})
+                  {'volume': volume['name'],
+                   'snapshot': snapshot['name']})
         volume_path = self._get_volume_path(volume['name'])
         url = 'storage/volumes/%s/rollback' % urllib.parse.quote_plus(
             volume_path)
@@ -284,8 +282,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         :param snapshot: reference of source snapshot
         """
         LOG.debug('Create volume %(volume)s from snapshot: %(snapshot)s',
-                 {'volume': volume['name'],
-                  'snapshot': snapshot['name']})
+                  {'volume': volume['name'],
+                   'snapshot': snapshot['name']})
         target_path = self._get_volume_path(volume['name'])
         source_path = self._get_volume_path(snapshot['volume_name'])
         snapshot_path = '%s@%s' % (source_path, snapshot['name'])
@@ -355,8 +353,9 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         host_groups = []
         volume_path = self._get_volume_path(volume['name'])
         if isinstance(connector, dict) and 'initiator' in connector:
-            attachments = volume.volume_attachment
-            connectors = [attachment.connector for attachment in attachments]
+            connectors = []
+            for attachment in volume.volume_attachment:
+                connectors.append(attachment.get('connector'))
             if connectors.count(connector) > 1:
                 LOG.debug('Detected multiple connections on host '
                           '%(host_name)s [%(host_ip)s] for volume '
@@ -381,7 +380,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
         params = {'volume': volume_path}
         url = 'san/lunMappings?%s' % urllib.parse.urlencode(params)
         mappings = self.nef.get(url).get('data')
-        if len(mappings) == 0:
+        if not mappings:
             LOG.debug('There are no LUN mappings found for volume %(volume)s',
                       {'volume': volume['name']})
             return info
@@ -546,7 +545,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                       {'group': group_name})
             return {}
         target_names = data[0]['members']
-        if len(target_names) == 0:
+        if not target_names:
             target_name = self._get_target_name(group_name)
             self._create_target(target_name, host_portals)
             self._update_target_group(group_name, [target_name])
@@ -611,14 +610,14 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             mapping_lu = mapping['lun']
             mapping_hg = mapping['hostGroup']
             mapping_tg = mapping['targetGroup']
-            if mapping_hg not in host_groups:
-                LOG.debug('Skip LUN mapping %(id)s for host group %(hg)s',
-                          {'id': mapping_id, 'hg': mapping_hg})
-                continue
             if mapping_tg == options.DEFAULT_TARGET_GROUP:
                 LOG.debug('Delete LUN mapping %(id)s for target group %(tg)s',
                           {'id': mapping_id, 'tg': mapping_tg})
-                self.self._delete_lun_mapping(mapping_id)
+                self._delete_lun_mapping(mapping_id)
+                continue
+            if mapping_hg not in host_groups:
+                LOG.debug('Skip LUN mapping %(id)s for host group %(hg)s',
+                          {'id': mapping_id, 'hg': mapping_hg})
                 continue
             group_props = self._target_group_props(mapping_tg, host_portals)
             if not group_props:
@@ -685,7 +684,7 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                       {'tg': target_group, 'members': members,
                        'mappings': mappings})
 
-        if len(mappings_spread) == 0:
+        if not mappings_spread:
             target = '%s-%s' % (self.target_prefix, uuid.uuid4().hex)
             target_group = self._get_target_group_name(target)
             self._create_target(target, host_portals)
@@ -702,9 +701,9 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
                       {'tg': target_group, 'members': members,
                        'mappings': mappings})
             for target in targets:
-                    portals = targets[target]
-                    props_portals += portals
-                    props_iqns += [target] * len(portals)
+                portals = targets[target]
+                props_portals += portals
+                props_iqns += [target] * len(portals)
 
         url = 'san/lunMappings'
         data = {
@@ -860,7 +859,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             greenthread.sleep(delay)
         return []
 
-    def _s2d(self, css):
+    @staticmethod
+    def _s2d(css):
         """Parse list of colon-separated address and port to dictionary.
 
         :param css: list of colon-separated address and port
@@ -872,7 +872,8 @@ class NexentaISCSIDriver(driver.ISCSIDriver):
             result.append({'address': key, 'port': int(val)})
         return result
 
-    def _d2s(self, kvp):
+    @staticmethod
+    def _d2s(kvp):
         """Parse dictionary to list of colon-separated address and port.
 
         :param kvp: dictionary

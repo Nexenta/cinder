@@ -22,8 +22,6 @@ from oslo_log import log as logging
 from oslo_utils import units
 from six.moves import urllib
 
-from cinder import context
-from cinder import db
 from cinder import exception
 from cinder.i18n import _
 from cinder import interface
