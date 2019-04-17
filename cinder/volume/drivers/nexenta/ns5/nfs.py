@@ -88,9 +88,10 @@ class NexentaNfsDriver(nfs.NfsDriver):
                 Added support for volume type extra specs.
                 Added vendor capabilities support.
         1.8.5 - Fixed NFS protocol version for generic volume migration.
+        1.8.6 - Fixed post-migration volume mount.
     """
 
-    VERSION = '1.8.5'
+    VERSION = '1.8.6'
     CI_WIKI_NAME = "Nexenta_CI"
 
     vendor_name = 'Nexenta'
@@ -256,16 +257,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
 
     def _mount_volume(self, volume):
         """Ensure that volume is activated and mounted on the host."""
-        volume_path = self._get_volume_path(volume)
-        payload = {'fields': 'mountPoint,isMounted'}
-        filesystem = self.nef.filesystems.get(volume_path, payload)
-        if filesystem['mountPoint'] == 'none':
-            payload = {'datasetName': volume_path}
-            self.nef.hpr.activate(payload)
-            filesystem = self.nef.filesystems.get(volume_path)
-        elif not filesystem['isMounted']:
-            self.nef.filesystems.mount(volume_path)
-        share = '%s:%s' % (self.nas_host, filesystem['mountPoint'])
+        share = self._get_volume_share(volume)
         self._ensure_share_mounted(share)
 
     def _remount_volume(self, volume):
@@ -276,7 +268,11 @@ class NexentaNfsDriver(nfs.NfsDriver):
 
     def _unmount_volume(self, volume):
         """Ensure that volume is unmounted on the host."""
-        share = self._get_volume_share(volume)
+        try:
+            share = self._get_volume_share(volume)
+        except jsonrpc.NefException as error:
+            if error.code == 'ENOENT':
+                return
         self._ensure_share_unmounted(share)
 
     def _create_sparsed_file(self, path, size):
@@ -338,7 +334,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
                       {'location': location, 'host': host['host'],
                        'error': error})
             return false_ret
-        if not (driver and nas_path):
+        if not (driver and nas_host and nas_path):
             LOG.debug('Incomplete location info %(location)s '
                       'found for the destination host %(host)s',
                       {'location': location, 'host': host['host']})
@@ -347,6 +343,23 @@ class NexentaNfsDriver(nfs.NfsDriver):
             LOG.debug('Unsupported storage driver %(driver)s '
                       'found for the destination host %(host)s',
                       {'driver': driver, 'host': host['host']})
+            return false_ret
+        storage_protocol = capabilities['storage_protocol']
+        if storage_protocol != self.storage_protocol:
+            LOG.debug('Unsupported storage protocol %(protocol)s '
+                      'found for the destination host %(host)s',
+                      {'protocol': storage_protocol,
+                       'host': host['host']})
+            return false_ret
+        free_capacity_gb = capabilities['free_capacity_gb']
+        if free_capacity_gb < volume['size']:
+            LOG.debug('There is not enough space available on the '
+                      'destination host %(host)s to migrate volume '
+                      '%(volume)s, available space: %(free)sG, '
+                      'required space: %(required)sG',
+                      {'host': host['host'], 'volume': volume['name'],
+                       'free': free_capacity_gb,
+                       'required': volume['size']})
             return false_ret
         try:
             payload = {'fields': 'name'}
@@ -901,9 +914,16 @@ class NexentaNfsDriver(nfs.NfsDriver):
     def _get_volume_share(self, volume):
         """Return NFS share path for the volume."""
         volume_path = self._get_volume_path(volume)
-        payload = {'fields': 'mountPoint'}
-        filesystem = self.nef.filesystems.get(volume_path, payload)
-        return '%s:%s' % (self.nas_host, filesystem['mountPoint'])
+        get_payload = {'fields': 'mountPoint,isMounted'}
+        filesystem = self.nef.filesystems.get(volume_path, get_payload)
+        if filesystem['mountPoint'] == 'none':
+            activate_payload = {'datasetName': volume_path}
+            self.nef.hpr.activate(activate_payload)
+            filesystem = self.nef.filesystems.get(volume_path, get_payload)
+        if not filesystem['isMounted']:
+            self.nef.filesystems.mount(volume_path)
+        share = '%s:%s' % (self.nas_host, filesystem['mountPoint'])
+        return share
 
     def _get_volume_path(self, volume):
         """Return ZFS dataset path for the volume."""
@@ -1526,8 +1546,8 @@ class NexentaNfsDriver(nfs.NfsDriver):
                 value = self._get_vendor_value(extra_spec, vendor_spec)
                 payload[api] = value
             elif (api in volume_specs and 'source' in volume_specs and
-                    api in volume_specs['source'] and
-                    volume_specs['source'][api] in ['local', 'received']):
+                  api in volume_specs['source'] and
+                  volume_specs['source'][api] in ['local', 'received']):
                 if 'cfg' in vendor_spec:
                     cfg = vendor_spec['cfg']
                     value = self.configuration.safe_get(cfg)
@@ -1695,15 +1715,15 @@ class NexentaNfsDriver(nfs.NfsDriver):
         return value
 
     def _get_host_addresses(self):
-        """Return Nexenta IP addresses list."""
-        host_addresses = []
+        """Return NexentaStor IP addresses list."""
+        addresses = []
         items = self.nef.netaddrs.list()
         for item in items:
-            ip_cidr = six.text_type(item['address'])
-            ip_addr, ip_mask = ip_cidr.split('/')
-            ip_obj = ipaddress.ip_address(ip_addr)
-            if not ip_obj.is_loopback:
-                host_addresses.append(ip_obj.exploded)
+            cidr = six.text_type(item['address'])
+            addr, mask = cidr.split('/')
+            obj = ipaddress.ip_address(addr)
+            if not obj.is_loopback:
+                addresses.append(obj.exploded)
         LOG.debug('Configured IP addresses: %(addresses)s',
-                  {'addresses': host_addresses})
-        return host_addresses
+                  {'addresses': addresses})
+        return addresses

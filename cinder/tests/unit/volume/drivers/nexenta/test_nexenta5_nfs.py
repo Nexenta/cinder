@@ -936,9 +936,12 @@ class TestNexentaNfsDriver(test.TestCase):
         volume = fake_volume(self.ctxt)
         path = self.drv._get_volume_path(volume)
         mount_point = '/path/to'
-        get_filesystem.return_value = {'mountPoint': mount_point}
+        get_filesystem.return_value = {
+            'mountPoint': mount_point,
+            'isMounted': True
+        }
         result = self.drv._get_volume_share(volume)
-        payload = {'fields': 'mountPoint'}
+        payload = {'fields': 'mountPoint,isMounted'}
         get_filesystem.assert_called_with(path, payload)
         expected = '%s:%s' % (self.drv.nas_host, mount_point)
         self.assertEqual(expected, result)
