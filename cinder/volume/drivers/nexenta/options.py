@@ -13,8 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from cinder.volume import configuration as conf
 from oslo_config import cfg
+
+from cinder.volume import configuration as conf
 
 DEFAULT_ISCSI_PORT = 3260
 DEFAULT_HOST_GROUP = 'all'
@@ -95,12 +96,12 @@ NEXENTA_CONNECTION_OPTS = [
                       'within which NexentaStor management '
                       'REST API server must send a response'),
     cfg.FloatOpt('nexenta_rest_backoff_factor',
-                 default=1,
+                 default=0.5,
                  help='Specifies the backoff factor to apply '
                       'between connection attempts to NexentaStor '
                       'management REST API server'),
     cfg.IntOpt('nexenta_rest_retry_count',
-               default=5,
+               default=3,
                help='Specifies the number of times to repeat NexentaStor '
                     'management REST API call in case of connection errors '
                     'and NexentaStor appliance EBUSY or ENOENT errors'),
