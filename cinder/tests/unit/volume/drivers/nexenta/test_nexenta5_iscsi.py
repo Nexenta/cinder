@@ -17,9 +17,7 @@ Unit tests for OpenStack Cinder volume driver
 """
 import uuid
 
-from mock import Mock
-from mock import patch
-
+import mock
 from oslo_utils import units
 
 from cinder import context
@@ -42,7 +40,8 @@ class TestNexentaISCSIDriver(test.TestCase):
     def setUp(self):
         super(TestNexentaISCSIDriver, self).setUp()
         self.ctxt = context.get_admin_context()
-        self.cfg = Mock(spec=conf.Configuration)
+        self.cfg = mock.Mock(spec=conf.Configuration)
+        self.cfg.max_over_subscription_ratio = 20.0
         self.cfg.volume_backend_name = 'nexenta_iscsi'
         self.cfg.nexenta_group_snapshot_template = 'group-snapshot-%s'
         self.cfg.nexenta_origin_snapshot_template = 'origin-snapshot-%s'
@@ -76,7 +75,7 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.cfg.nexenta_rest_read_timeout = 1
         self.cfg.nexenta_volume_group = 'vg'
         self.cfg.safe_get = self.fake_safe_get
-        self.nef_mock = Mock()
+        self.nef_mock = mock.Mock()
         self.mock_object(jsonrpc, 'NefRequest',
                          return_value=self.nef_mock)
         self.drv = iscsi.NexentaISCSIDriver(
@@ -97,12 +96,12 @@ class TestNexentaISCSIDriver(test.TestCase):
     def test_do_setup(self):
         self.assertIsNone(self.drv.do_setup(self.ctxt))
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefServices.get')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumeGroups.create')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumeGroups.get')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefServices.get')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumeGroups.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumeGroups.get')
     def test_check_for_setup_error(self, volume_group_get,
                                    volume_group_create,
                                    service_get):
@@ -133,25 +132,31 @@ class TestNexentaISCSIDriver(test.TestCase):
         self.assertRaises(jsonrpc.NefException,
                           self.drv.check_for_setup_error)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.create')
-    def test_create_volume(self, create_volume):
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_vendor_properties')
+    def test_create_volume(self, get_vendor_properties, create_volume):
         volume = fake_volume(self.ctxt)
+        spec = {
+            'sparseVolume': True,
+            'volumeBlockSize': 32768,
+            'compressionMode': 'on'
+        }
+        get_vendor_properties.return_value = spec
+        create_volume.return_value = {}
         self.assertIsNone(self.drv.create_volume(volume))
         path = self.drv._get_volume_path(volume)
         size = volume['size'] * units.Gi
-        bs = self.cfg.nexenta_ns5_blocksize * units.Ki
         payload = {
             'path': path,
-            'volumeSize': size,
-            'volumeBlockSize': bs,
-            'compressionMode': self.cfg.nexenta_dataset_compression,
-            'sparseVolume': self.cfg.nexenta_sparse
+            'volumeSize': size
         }
+        payload.update(spec)
         create_volume.assert_called_with(payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.delete')
     def test_delete_volume(self, delete_volume):
         volume = fake_volume(self.ctxt)
         self.assertIsNone(self.drv.delete_volume(volume))
@@ -159,8 +164,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'snapshots': True}
         delete_volume.assert_called_with(path, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.set')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.set')
     def test_extend_volume(self, extend_volume):
         volume = fake_volume(self.ctxt)
         size = volume['size'] * 2
@@ -170,8 +175,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'volumeSize': size}
         extend_volume.assert_called_with(path, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.delete')
     def test_delete_snapshot(self, delete_snapshot):
         volume = fake_volume(self.ctxt)
         snapshot = fake_snapshot(self.ctxt)
@@ -187,8 +192,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = False
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.rollback')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.rollback')
     def test_revert_to_snapshot(self, rollback_volume):
         volume = fake_volume(self.ctxt)
         snapshot = fake_snapshot(self.ctxt)
@@ -201,12 +206,12 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'snapshot': snapshot['name']}
         rollback_volume.assert_called_with(path, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
-           'NexentaISCSIDriver.delete_snapshot')
-    @patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
-           'NexentaISCSIDriver.create_volume_from_snapshot')
-    @patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
-           'NexentaISCSIDriver.create_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
+                'NexentaISCSIDriver.delete_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
+                'NexentaISCSIDriver.create_volume_from_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
+                'NexentaISCSIDriver.create_snapshot')
     def test_create_cloned_volume(self, create_snapshot, create_volume,
                                   delete_snapshot):
         volume = fake_volume(self.ctxt)
@@ -239,8 +244,8 @@ class TestNexentaISCSIDriver(test.TestCase):
                           self.drv.create_cloned_volume,
                           clone, volume)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.create')
     def test_create_snapshot(self, create_snapshot):
         volume = fake_volume(self.ctxt)
         snapshot = fake_snapshot(self.ctxt)
@@ -251,10 +256,10 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'path': path}
         create_snapshot.assert_called_with(payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver.extend_volume')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.clone')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver.extend_volume')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.clone')
     def test_create_volume_from_snapshot(self, clone_snapshot,
                                          extend_volume):
         volume = fake_volume(self.ctxt)
@@ -277,19 +282,19 @@ class TestNexentaISCSIDriver(test.TestCase):
         clone_snapshot.assert_called_with(snapshot_path, clone_payload)
         extend_volume.assert_called_with(clone, clone_size)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefLunMappings.list')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._create_target_group')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._create_target')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._target_group_props')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_host_portals')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_host_group')
-    @patch('uuid.uuid4', fake_uuid4)
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefLunMappings.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._create_target_group')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._create_target')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._target_group_props')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_host_portals')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_host_group')
+    @mock.patch('uuid.uuid4', fake_uuid4)
     def test_initialize_connection(self, get_host_group, get_host_portals,
                                    get_target_group_props, create_target,
                                    create_target_group, list_mappings):
@@ -319,6 +324,7 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = {
             'driver_volume_type': 'iscsi',
             'data': {
+                'discard': True,
                 'target_discovered': False,
                 'encrypted': False,
                 'qos_specs': None,
@@ -331,12 +337,12 @@ class TestNexentaISCSIDriver(test.TestCase):
         }
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefLunMappings.delete')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefLunMappings.list')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_host_group')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefLunMappings.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefLunMappings.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_host_group')
     def test_terminate_connection(self, get_host_group,
                                   list_mappings, delete_mapping):
         volume = fake_volume(self.ctxt)
@@ -374,8 +380,8 @@ class TestNexentaISCSIDriver(test.TestCase):
             self.drv.remove_export(self.ctxt, volume)
         )
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumeGroups.get')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumeGroups.get')
     def test_get_volume_stats(self, get_volume_group):
         available = 100
         used = 75
@@ -388,8 +394,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         get_volume_group.assert_called_with(self.drv.root_path, payload)
         self.assertEqual(self.drv._stats, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumeGroups.get')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumeGroups.get')
     def test_update_volume_stats(self, get_volume_group):
         available = 8
         used = 2
@@ -401,27 +407,45 @@ class TestNexentaISCSIDriver(test.TestCase):
             'driver': self.drv.__class__.__name__,
             'host': self.cfg.nexenta_host,
             'pool': self.cfg.nexenta_volume,
-            'group': self.cfg.nexenta_volume_group,
+            'group': self.cfg.nexenta_volume_group
         }
+        description = '%(product)s %(host)s:%(pool)s/%(group)s' % {
+            'product': self.drv.product_name,
+            'host': self.cfg.nexenta_host,
+            'pool': self.cfg.nexenta_volume,
+            'group': self.cfg.nexenta_volume_group
+        }
+        display_name = 'Capabilities of %(product)s %(proto)s driver' % {
+            'product': self.drv.product_name,
+            'proto': self.drv.storage_protocol
+        }
+        max_over_subscription_ratio = self.cfg.max_over_subscription_ratio
+        visibility = 'public'
         expected = {
             'vendor_name': 'Nexenta',
-            'dedup': self.cfg.nexenta_dataset_dedup,
-            'compression': self.cfg.nexenta_dataset_compression,
-            'description': self.cfg.nexenta_dataset_description,
+            'description': description,
+            'display_name': display_name,
             'driver_version': self.drv.VERSION,
-            'storage_protocol': 'iSCSI',
-            'sparsed_volumes': self.cfg.nexenta_sparse,
+            'storage_protocol': self.drv.storage_protocol,
+            'pool_name': self.drv.pool,
+            'visibility': visibility,
+            'allocated_capacity_gb': used,
             'total_capacity_gb': used + available,
+            'total_volumes': 0,
             'free_capacity_gb': available,
+            'provisioned_capacity_gb': 0,
             'reserved_percentage': self.cfg.reserved_percentage,
+            'max_over_subscription_ratio': max_over_subscription_ratio,
+            'thick_provisioning_support': True,
+            'thin_provisioning_support': True,
+            'sparse_copy_volume': True,
+            'online_extend_support': True,
             'QoS_support': False,
             'multiattach': True,
             'consistencygroup_support': True,
             'consistent_group_snapshot_enabled': True,
             'volume_backend_name': self.cfg.volume_backend_name,
             'location_info': location_info,
-            'iscsi_target_portal_port': (
-                self.cfg.nexenta_iscsi_target_portal_port),
             'nef_url': self.cfg.nexenta_rest_address,
             'nef_port': self.cfg.nexenta_rest_port
         }
@@ -459,8 +483,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = '%s-test' % self.cfg.nexenta_target_prefix
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefNetAddresses.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefNetAddresses.list')
     def test__get_host_addresses(self, list_addresses):
         expected = ['1.1.1.1', '2.2.2.2', '3.3.3.3']
         return_value = []
@@ -473,18 +497,18 @@ class TestNexentaISCSIDriver(test.TestCase):
         result = self.drv._get_host_addresses()
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_host_addresses')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_host_addresses')
     def test__get_host_portals(self, list_addresses):
         list_addresses.return_value = ['1.1.1.1', '2.2.2.2', '3.3.3.3']
         expected = ['1.1.1.1:3260', '2.2.2.2:3260']
         result = self.drv._get_host_portals()
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefTargets.list')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefTargetsGroups.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefTargets.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefTargetsGroups.list')
     def test__target_group_props(self, list_target_groups, list_targets):
         host_portals = ['1.1.1.1:3260', '2.2.2.2:3260']
         target_group = 'cinder-test'
@@ -511,8 +535,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         result = self.drv._target_group_props(target_group, host_portals)
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefTargetsGroups.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefTargetsGroups.create')
     def test__create_target_group(self, create_target_group):
         name = 'name'
         members = ['a', 'b', 'c']
@@ -521,8 +545,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'name': name, 'members': members}
         create_target_group.assert_called_with(payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefTargetsGroups.set')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefTargetsGroups.set')
     def test__update_target_group(self, update_target_group):
         name = 'name'
         members = ['a', 'b', 'c']
@@ -531,16 +555,16 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'members': members}
         update_target_group.assert_called_with(name, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefLunMappings.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefLunMappings.delete')
     def test__delete_lun_mapping(self, delete_mapping):
         name = 'name'
         delete_mapping.return_value = {}
         self.assertIsNone(self.drv._delete_lun_mapping(name))
         delete_mapping.assert_called_with(name)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefTargets.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefTargets.create')
     def test__create_target(self, create_target):
         name = 'name'
         portals = ['1.1.1.1:3260', '2.2.2.2:3260']
@@ -561,8 +585,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         }
         create_target.assert_called_with(payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefHostGroups.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefHostGroups.list')
     def test__get_host_group(self, get_hostgroup):
         member = 'member1'
         get_hostgroup.return_value = [
@@ -587,8 +611,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         result = self.drv._get_host_group(member)
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefHostGroups.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefHostGroups.create')
     def test__create_host_group(self, create_host_group):
         name = 'name'
         members = ['a', 'b', 'c']
@@ -633,8 +657,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = {}
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver.delete_volume')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver.delete_volume')
     def test_delete_consistencygroup(self, delete_volume):
         cgroup = fake_cgroup(self.ctxt)
         volume1 = fake_volume(self.ctxt)
@@ -666,12 +690,12 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = ({}, [], [])
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.delete')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.rename')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.rename')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.create')
     def test_create_cgsnapshot(self, create_snapshot,
                                rename_snapshot,
                                delete_snapshot):
@@ -701,8 +725,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = ({}, [])
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver.delete_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver.delete_snapshot')
     def test_delete_cgsnapshot(self, delete_snapshot):
         cgsnapshot = fake_cgsnapshot(self.ctxt)
         volume = fake_volume(self.ctxt)
@@ -717,8 +741,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = ({}, [])
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver.create_volume_from_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver.create_volume_from_snapshot')
     def test_create_consistencygroup_from_src_snapshots(self, create_volume):
         cgroup = fake_cgroup(self.ctxt)
         cgsnapshot = fake_cgsnapshot(self.ctxt)
@@ -738,11 +762,12 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = ({}, [])
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.delete')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver.create_volume_from_snapshot')
-    @patch('cinder.volume.drivers.nexenta.ns5.jsonrpc.NefSnapshots.create')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.delete')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver.create_volume_from_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.create')
     def test_create_consistencygroup_from_src_volumes(self,
                                                       create_snapshot,
                                                       create_volume,
@@ -781,8 +806,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = ({}, [])
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.list')
     def test__get_existing_volume(self, list_volumes):
         volume = fake_volume(self.ctxt)
         parent = self.drv.root_path
@@ -816,8 +841,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = False
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.list')
     def test__get_existing_snapshot(self, list_snapshots):
         volume = fake_volume(self.ctxt)
         snapshot = fake_snapshot(self.ctxt)
@@ -846,12 +871,12 @@ class TestNexentaISCSIDriver(test.TestCase):
         }
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.rename')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefLunMappings.list')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_existing_volume')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.rename')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefLunMappings.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_existing_volume')
     def test_manage_existing(self, get_existing_volume,
                              list_mappings, rename_volume):
         existing_volume = fake_volume(self.ctxt)
@@ -875,8 +900,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'newPath': manage_path}
         rename_volume.assert_called_with(existing_path, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
-           'NexentaISCSIDriver._get_existing_volume')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.iscsi.'
+                'NexentaISCSIDriver._get_existing_volume')
     def test_manage_existing_get_size(self, get_volume):
         volume = fake_volume(self.ctxt)
         name = volume['name']
@@ -892,8 +917,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = size
         self.assertEqual(expected, result)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefVolumes.list')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefVolumes.list')
     def test_get_manageable_volumes(self, list_volumes):
         volume = fake_volume(self.ctxt)
         volumes = [volume]
@@ -933,10 +958,10 @@ class TestNexentaISCSIDriver(test.TestCase):
         volume = fake_volume(self.ctxt)
         self.assertIsNone(self.drv.unmanage(volume))
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.rename')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_existing_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.rename')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_existing_snapshot')
     def test_manage_existing_snapshot(self, get_existing_snapshot,
                                       rename_snapshot):
         volume = fake_volume(self.ctxt)
@@ -965,8 +990,8 @@ class TestNexentaISCSIDriver(test.TestCase):
         payload = {'newName': manage_name}
         rename_snapshot.assert_called_with(existing_path, payload)
 
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'iscsi.NexentaISCSIDriver._get_existing_snapshot')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'iscsi.NexentaISCSIDriver._get_existing_snapshot')
     def test_manage_existing_snapshot_get_size(self, get_snapshot):
         volume = fake_volume(self.ctxt)
         snapshot = fake_snapshot(self.ctxt)
@@ -986,9 +1011,9 @@ class TestNexentaISCSIDriver(test.TestCase):
         expected = volume['size']
         self.assertEqual(expected, result)
 
-    @patch('cinder.objects.VolumeList.get_all_by_host')
-    @patch('cinder.volume.drivers.nexenta.ns5.'
-           'jsonrpc.NefSnapshots.list')
+    @mock.patch('cinder.objects.VolumeList.get_all_by_host')
+    @mock.patch('cinder.volume.drivers.nexenta.ns5.'
+                'jsonrpc.NefSnapshots.list')
     def test_get_manageable_snapshots(self, list_snapshots, list_volumes):
         volume = fake_volume(self.ctxt)
         volumes = [volume]
