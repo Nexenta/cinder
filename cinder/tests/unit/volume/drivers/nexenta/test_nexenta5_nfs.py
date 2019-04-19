@@ -299,8 +299,8 @@ class TestNexentaNfsDriver(test.TestCase):
 
     @mock.patch('cinder.volume.drivers.nexenta.ns5.'
                 'nfs.NexentaNfsDriver._unmount_volume')
-    @mock.patch('cinder.volume.drivers.remotefs.'
-                'RemoteFSDriver.copy_image_to_volume')
+    @mock.patch('cinder.volume.drivers.nfs.NfsDriver.'
+                'copy_image_to_volume')
     @mock.patch('cinder.volume.drivers.nexenta.ns5.'
                 'nfs.NexentaNfsDriver._mount_volume')
     def test_copy_image_to_volume(self, mount_volume,
@@ -323,8 +323,8 @@ class TestNexentaNfsDriver(test.TestCase):
 
     @mock.patch('cinder.volume.drivers.nexenta.ns5.'
                 'nfs.NexentaNfsDriver._unmount_volume')
-    @mock.patch('cinder.volume.drivers.remotefs.'
-                'RemoteFSDriver.copy_volume_to_image')
+    @mock.patch('cinder.volume.drivers.nfs.NfsDriver.'
+                'copy_volume_to_image')
     @mock.patch('cinder.volume.drivers.nexenta.ns5.'
                 'nfs.NexentaNfsDriver._mount_volume')
     def test_copy_volume_to_image(self, mount_volume,
@@ -404,10 +404,10 @@ class TestNexentaNfsDriver(test.TestCase):
         get_share.assert_called_with(volume)
         unmount_share.assert_called_with(share)
 
-    @mock.patch('cinder.volume.drivers.remotefs.'
-                'RemoteFSDriver._create_qcow2_file')
-    @mock.patch('cinder.volume.drivers.remotefs.'
-                'RemoteFSDriver._create_sparsed_file')
+    @mock.patch('cinder.volume.drivers.nfs.NfsDriver.'
+                '_create_qcow2_file')
+    @mock.patch('cinder.volume.drivers.nfs.NfsDriver.'
+                '_create_sparsed_file')
     def test__create_sparsed_file(self, create_sparsed_file,
                                   create_qcow2_file):
         create_sparsed_file.return_value = True
