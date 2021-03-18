@@ -1,4 +1,4 @@
-# Copyright 2020 Nexenta by DDN, Inc. All rights reserved.
+# Copyright 2021 Nexenta by DDN, Inc. All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -26,6 +26,7 @@ from oslo_utils import units
 import six
 
 from cinder import coordination
+from cinder import exception
 from cinder.i18n import _
 from cinder.image import image_utils
 from cinder import interface
@@ -110,9 +111,10 @@ class NexentaNfsDriver(nfs.NfsDriver):
         1.9.4 - Added support for nohide NFS option.
               - Fixed concurrency issues.
         1.9.5 - Fixed issue with retries when mounting an NFS share.
+        1.9.6 - Added support for encrypted volumes.
     """
 
-    VERSION = '1.9.5'
+    VERSION = '1.9.6'
     CI_WIKI_NAME = "Nexenta_CI"
 
     vendor_name = 'Nexenta'
@@ -551,6 +553,17 @@ class NexentaNfsDriver(nfs.NfsDriver):
         volume_image = image.VolumeImage(self, volume, specs)
         volume_image.download(ctxt, image_service, image_id)
 
+    @coordination.synchronized('{self.nef.lock}-{volume[id]}')
+    def copy_image_to_encrypted_volume(self, ctxt, volume, image_service,
+                                       image_id):
+        specs = self._get_image_specs(volume)
+        LOG.debug('Copy image %(image)s to %(format)s encrypted '
+                  'volume %(volume)s',
+                  {'image': image_id, 'format': specs['format'],
+                   'volume': volume['name']})
+        volume_image = image.VolumeImage(self, volume, specs)
+        volume_image.download(ctxt, image_service, image_id)
+
     @coordination.synchronized('{self.nef.lock}-{image_meta[id]}')
     def copy_volume_to_image(self, ctxt, volume, image_service, image_meta):
         specs = self._get_image_specs(volume)
@@ -640,7 +653,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         volume_image.fetch(ctxt, image_service, image_id)
         payload = {'referencedReservationSize': volume_image.file_size}
         self.nef.filesystems.set(cache_path, payload)
-        cache['size'] = volume_image.volume_size
+        cache['size'] = volume_image.size
         snapshot['volume_size'] = cache['size']
         self.create_snapshot(snapshot)
         return snapshot
@@ -1190,6 +1203,10 @@ class NexentaNfsDriver(nfs.NfsDriver):
         :param volume: volume reference
         :param new_size: volume new size in GB
         """
+        if self._is_volume_attached(volume):
+            reason = (_('Cannot extend volume %s while it is attached.')
+                      % volume['id'])
+            raise exception.ExtendVolumeError(reason=reason)
         specs = self._get_image_specs(volume)
         file_sparse = specs['sparse']
         file_vsolution = specs['vsolution']
@@ -1803,7 +1820,7 @@ class NexentaNfsDriver(nfs.NfsDriver):
         specs = self._get_image_specs(existing_volume)
         volume_image = image.VolumeImage(self, existing_volume, specs)
         volume_image.reload(file_size=True)
-        return volume_image.volume_size
+        return volume_image.size
 
     def get_manageable_volumes(self, cinder_volumes, marker, limit, offset,
                                sort_keys, sort_dirs):

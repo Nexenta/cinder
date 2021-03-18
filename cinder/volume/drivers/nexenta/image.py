@@ -12,12 +12,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import binascii
 import os
+import tempfile
 
+from castellan import key_manager
+from oslo_config import cfg
 from oslo_utils import units
 
+from cinder import exception
+from cinder.i18n import _
 from cinder.image import image_utils
 from cinder.volume.drivers.nexenta import utils
+from cinder.volume import volume_utils
 
 FILE_NAME = 'volume'
 FORMAT_RAW = 'raw'
@@ -29,11 +36,13 @@ FORMAT_VHDX = 'vhdx'
 FORMAT_VMDK = 'vmdk'
 FORMAT_VPC = 'vpc'
 FORMAT_QED = 'qed'
+FORMAT_LUKS = 'luks'
 
 
 class VolumeImage(object):
     def __init__(self, driver, volume, specs):
         self.driver = driver
+        self.volume = volume
         self.nohide = driver.nas_nohide
         self.root = driver._execute_as_root
         self.block_size = driver.configuration.volume_dd_blocksize
@@ -62,8 +71,12 @@ class VolumeImage(object):
             run_as_root=self.root)
 
     @property
-    def volume_size(self):
+    def size(self):
         return utils.roundgb(self.file_size)
+
+    @property
+    def encrypted(self):
+        return self.volume.encryption_key_id is not None
 
     def execute(self, *cmd, **kwargs):
         if 'run_as_root' not in kwargs:
@@ -72,10 +85,26 @@ class VolumeImage(object):
 
     def create(self):
         cmd = ['qemu-img', 'create', '-f']
-        cmd.append(self.file_format)
-        if self.file_format == FORMAT_QCOW2:
-            cmd.append('-o')
-            cmd.append('preallocation=metadata')
+        if self.encrypted:
+            file_format, spec, password = self.encryption_spec()
+            spec = {key.replace('_', '-'): value
+                    for key, value in spec.items()}
+            spec.update({'key-secret': 'key-secret'})
+            if self.file_format == FORMAT_QCOW2:
+                spec.update({'format': FORMAT_LUKS})
+                spec = {'encrypt.%s' % key: value
+                        for key, value in spec.items()}
+            options = ','.join(map('='.join, spec.items()))
+            key_file = tempfile.NamedTemporaryFile()
+            with open(key_file.name, 'w') as key_content:
+                key_content.write(password)
+            secret = 'secret,id=key-secret,format=raw,file=%s' % key_file.name
+            cmd.extend([file_format, '-o', options, '--object', secret])
+        elif self.file_format == FORMAT_QCOW2:
+            cmd.append(FORMAT_QCOW2)
+            cmd.extend(['-o', 'preallocation=metadata'])
+        else:
+            cmd.append(self.file_format)
         cmd.append(self.file_path)
         cmd.append(self.file_size)
         self.execute(*cmd)
@@ -129,8 +158,10 @@ class VolumeImage(object):
             self.file_format = FORMAT_RAW
         self.fetch(ctxt, image_service, image_id)
         self.change(file_size=file_size, file_format=file_format)
+        if self.encrypted:
+            self.encrypt(ctxt)
 
-    def convert(self, file_format):
+    def convert(self, file_format, cipher_spec=None, passphrase_file=None):
         file_path = '%(path)s.%(format)s' % {
             'path': self.file_path,
             'format': file_format
@@ -138,11 +169,21 @@ class VolumeImage(object):
         image_utils.convert_image(
             self.file_path,
             file_path,
-            file_format,
+            out_format=file_format,
             src_format=self.file_format,
-            run_as_root=self.root)
+            run_as_root=self.root,
+            cipher_spec=cipher_spec,
+            passphrase_file=passphrase_file)
         self.execute('mv', file_path, self.file_path)
         self.file_format = file_format
+
+    def encrypt(self, ctxt):
+        file_format, spec, password = self.encryption_spec(ctxt)
+        key_file = tempfile.NamedTemporaryFile()
+        with open(key_file.name, 'w') as key_content:
+            key_content.write(password)
+        self.convert(file_format, cipher_spec=spec,
+                     passphrase_file=key_file.name)
 
     def reload(self, file_size=False, file_format=False):
         info = self.info
@@ -150,3 +191,23 @@ class VolumeImage(object):
             self.file_size = info.virtual_size
         if file_format:
             self.file_format = info.file_format
+
+    def encryption_spec(self, ctxt=None):
+        if not ctxt:
+            ctxt = self.volume.obj_context
+        if self.file_format == FORMAT_RAW:
+            file_format = FORMAT_LUKS
+        elif self.file_format == FORMAT_QCOW2:
+            file_format = FORMAT_QCOW2
+        else:
+            message = (_('%s volume format does not support encryption.')
+                       % self.file_format)
+            raise exception.VolumeDriverException(message=message)
+        encryption = volume_utils.check_encryption_provider(self.driver.db,
+                                                            self.volume, ctxt)
+        spec = image_utils.decode_cipher(encryption['cipher'],
+                                         encryption['key_size'])
+        manager = key_manager.API(cfg.CONF)
+        key = manager.get(ctxt, encryption['encryption_key_id'])
+        password = binascii.hexlify(key.get_encoded()).decode('utf-8')
+        return file_format, spec, password
