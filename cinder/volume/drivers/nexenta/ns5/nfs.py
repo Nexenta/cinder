@@ -545,24 +545,27 @@ class NexentaNfsDriver(nfs.NfsDriver):
             volume_image.create()
 
     @coordination.synchronized('{self.nef.lock}-{volume[id]}')
-    def copy_image_to_volume(self, ctxt, volume, image_service, image_id):
+    def copy_image_to_volume(self, ctxt, volume, image_service, image_id,
+                             disable_sparse=False):
         specs = self._get_image_specs(volume)
         LOG.debug('Copy image %(image)s to %(format)s volume %(volume)s',
                   {'image': image_id, 'format': specs['format'],
                    'volume': volume['name']})
         volume_image = image.VolumeImage(self, volume, specs)
-        volume_image.download(ctxt, image_service, image_id)
+        volume_image.download(ctxt, image_service, image_id,
+                              disable_sparse=disable_sparse)
 
     @coordination.synchronized('{self.nef.lock}-{volume[id]}')
     def copy_image_to_encrypted_volume(self, ctxt, volume, image_service,
-                                       image_id):
+                                       image_id, disable_sparse=False):
         specs = self._get_image_specs(volume)
         LOG.debug('Copy image %(image)s to %(format)s encrypted '
                   'volume %(volume)s',
                   {'image': image_id, 'format': specs['format'],
                    'volume': volume['name']})
         volume_image = image.VolumeImage(self, volume, specs)
-        volume_image.download(ctxt, image_service, image_id)
+        volume_image.download(ctxt, image_service, image_id,
+                              disable_sparse=disable_sparse)
 
     @coordination.synchronized('{self.nef.lock}-{image_meta[id]}')
     def copy_volume_to_image(self, ctxt, volume, image_service, image_meta):

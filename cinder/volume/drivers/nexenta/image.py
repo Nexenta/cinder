@@ -142,21 +142,28 @@ class VolumeImage(object):
             volume_format=self.file_format,
             run_as_root=self.root)
 
-    def fetch(self, ctxt, image_service, image_id):
-        image_utils.fetch_to_volume_format(
-            ctxt, image_service,
-            image_id, self.file_path,
-            self.file_format,
-            self.block_size,
-            run_as_root=self.root)
+    def fetch(self, ctxt, image_service, image_id, disable_sparse=False):
+        # Accept disable_sparse for VolumeDriver API parity. Pass through when
+        # image_utils supports it; otherwise fall back (older trees).
+        args = (ctxt, image_service, image_id, self.file_path,
+                self.file_format, self.block_size)
+        kwargs = {'run_as_root': self.root}
+        try:
+            image_utils.fetch_to_volume_format(
+                *args, disable_sparse=disable_sparse, **kwargs)
+        except TypeError as exc:
+            if 'disable_sparse' not in str(exc):
+                raise
+            image_utils.fetch_to_volume_format(*args, **kwargs)
         self.reload(file_size=True)
 
-    def download(self, ctxt, image_service, image_id):
+    def download(self, ctxt, image_service, image_id, disable_sparse=False):
         file_size = self.file_size
         file_format = self.file_format
         if self.file_format not in self.resizable_formats:
             self.file_format = FORMAT_RAW
-        self.fetch(ctxt, image_service, image_id)
+        self.fetch(ctxt, image_service, image_id,
+                   disable_sparse=disable_sparse)
         self.change(file_size=file_size, file_format=file_format)
         if self.encrypted:
             self.encrypt(ctxt)
